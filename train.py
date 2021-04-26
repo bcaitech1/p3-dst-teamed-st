@@ -55,6 +55,8 @@ if __name__ == "__main__":
     
     args.data_dir = os.environ['SM_CHANNEL_TRAIN']
     args.model_dir = os.environ['SM_MODEL_DIR']
+    print(args.data_dir)
+    print(args.model_dir)
 
     # random seed 고정
     set_seed(args.random_seed)
