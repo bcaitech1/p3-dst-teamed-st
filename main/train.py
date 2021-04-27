@@ -19,7 +19,6 @@ from preprocessor import TRADEPreprocessor
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="data/train_dataset")
@@ -53,8 +52,8 @@ if __name__ == "__main__":
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     args = parser.parse_args()
     
-    args.data_dir = os.environ['SM_CHANNEL_TRAIN']
-    args.model_dir = os.environ['SM_MODEL_DIR']
+    # args.data_dir = os.environ['SM_CHANNEL_TRAIN']
+    # args.model_dir = os.environ['SM_MODEL_DIR']
     print(args.data_dir)
     print(args.model_dir)
 
