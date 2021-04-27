@@ -7,4 +7,7 @@ Pre-defined scenario 에서 Task schema 를 수행
 - Task-schema  
   유저는 자신의 상황을 Informable slot으로 설명하고 서버에 Request
   서버는 Informable slot과 Request를 참고하여, Requestable slot에서 정보를 제공한다.
-  이 때, Informable slot 들을 추적하는 것이 Dialogue state tracking
+  이 때, Informable slot 들을 추적하는 것이 Dialogue state tracking 이다.
+  
+### Ontology-based DST Model
+![img.png](img.png)
