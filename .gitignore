@@ -1,3 +1,11 @@
+venv/
+.idea/
+*.log
+*.pot
+*.pyc
+__pycache__/
+db.splite3
+
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,vscode,pycharm
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,vscode,pycharm
