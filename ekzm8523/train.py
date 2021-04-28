@@ -54,8 +54,8 @@ if __name__ == "__main__":
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     args = parser.parse_args()
     
-    args.data_dir = os.environ['SM_CHANNEL_TRAIN']
-    args.model_dir = os.environ['SM_MODEL_DIR']
+    # args.data_dir = os.environ['SM_CHANNEL_TRAIN']
+    # args.model_dir = os.environ['SM_MODEL_DIR']
     print(args.data_dir)
     print(args.model_dir)
 
@@ -63,11 +63,15 @@ if __name__ == "__main__":
     set_seed(args.random_seed)
 
     # Data Loading
+    # list안에 7000개의 dict
+    # train_data[0].keys -> dialogue, dialogue_idx, domain
+    # Train과 dev 차이는 dev[0]은 dialogue안에 state(label)가 없다.
     train_data_file = f"{args.data_dir}/train_dials.json"
-    slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))
-    train_data, dev_data, dev_labels = load_dataset(train_data_file)
-
-    train_examples = get_examples_from_dialogues(
+    slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json")) # 45개의 slot
+    train_data, dev_data, dev_labels = load_dataset(train_data_file) # item별로 분류 6301개 , 699개
+    
+    # list안에 dialogue별로 세분화, dict type -> DSTInputExample type , dev는 label이 none
+    train_examples = get_examples_from_dialogues( # item의 dialogue별로 46170개, 5075개
         train_data, user_first=False, dialogue_level=False
     )
     dev_examples = get_examples_from_dialogues(
@@ -81,6 +85,8 @@ if __name__ == "__main__":
     args.n_gate = len(processor.gating2id) # gating 갯수 none, dontcare, ptr
 
     # Extracting Featrues
+    
+    # OpenVocabDSTFeature [guid, input_id, segment_id, gating_id, target_ids]
     train_features = processor.convert_examples_to_features(train_examples)
     dev_features = processor.convert_examples_to_features(dev_examples)
     
@@ -98,8 +104,8 @@ if __name__ == "__main__":
     model.to(device)
     print("Model is initialized")
 
-    train_data = WOSDataset(train_features)
-    train_sampler = RandomSampler(train_data)
+    train_data = WOSDataset(train_features) # feature와 len만 담긴 dataset
+    train_sampler = RandomSampler(train_data) #
     train_loader = DataLoader(
         train_data,
         batch_size=args.train_batch_size,
@@ -139,6 +145,7 @@ if __name__ == "__main__":
         indent=2,
         ensure_ascii=False,
     )
+    
     json.dump(
         slot_meta,
         open(f"{args.model_dir}/slot_meta.json", "w"),
@@ -150,7 +157,7 @@ if __name__ == "__main__":
     for epoch in range(n_epochs):
         model.train()
         for step, batch in enumerate(train_loader):
-            input_ids, segment_ids, input_masks, gating_ids, target_ids, guids = [
+            input_ids, segment_ids, input_masks, gating_ids, target_ids, guids = [ # gating_ids는 target_ids의 어디를 봐야하는지 알려
                 b.to(device) if not isinstance(b, list) else b for b in batch
             ]
             
@@ -164,7 +171,7 @@ if __name__ == "__main__":
                 tf = None
 
             all_point_outputs, all_gate_outputs = model(
-                input_ids, segment_ids, input_masks, target_ids.size(-1), tf
+                input_ids, segment_ids, input_masks, target_ids.size(-1), tf # size(-1)은 shape의 [-1] 값을 가져옴
             )
             
             # generation loss

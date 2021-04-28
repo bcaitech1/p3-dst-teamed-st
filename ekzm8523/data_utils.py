@@ -27,7 +27,7 @@ class OpenVocabDSTFeature:
     input_id: List[int]
     segment_id: List[int]
     gating_id: List[int]
-    target_ids: Optional[Union[List[int], List[List[int]]]]
+    target_ids: Optional[Union[List[int], List[List[int]]]] # Union : 여러개의 type 허용 , Optional : None도 허용
 
 
 class WOSDataset(Dataset):
@@ -122,6 +122,11 @@ def build_slot_meta(data):
 
 
 def convert_state_dict(state):
+    """
+    :param state: list
+    :return: dict
+    dic[s] = v : s = domain-slot(관광-종류) , v = value(박물관)
+    """
     dic = {}
     for slot in state:
         s, v = split_slot(slot, get_domain_slot=True) # s = domain-slot(관광-종류) , v = value(박물관)

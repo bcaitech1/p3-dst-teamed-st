@@ -21,9 +21,27 @@ class TRADEPreprocessor(DSTPreprocessor):
         self.max_seq_length = max_seq_length
 
     def _convert_example_to_feature(self, example):
+        """
+        :param example: DSTInputExample
+                [
+                    guid: str,
+                    context_turns: List[str],
+                    current_turn: List[str],
+                    label: Optional[List[str]] = None
+                ]
+        
+        :return: OpenVocabDSTFeature
+                [
+                    guid: str
+                    input_id: List[int]
+                    segment_id: List[int]
+                    gating_id: List[int]
+                    target_ids: Optional[Union[List[int], List[List[int]]]]
+                ]
+        """
         dialogue_context = " [SEP] ".join(example.context_turns + example.current_turn) # [SEP] @@ [SEP] @@ [SEP] ...
 
-        input_id = self.src_tokenizer.encode(dialogue_context, add_special_tokens=False)
+        input_id = self.src_tokenizer.encode(dialogue_context, add_special_tokens=False) # 지금까지 모든 대화 전부 encode한게 input id
 #         max_length = self.max_seq_length - 2
 #         if len(input_id) > max_length:
 #             gap = len(input_id) - max_length
@@ -42,7 +60,7 @@ class TRADEPreprocessor(DSTPreprocessor):
             example.label = []
 
         state = convert_state_dict(example.label) # dic{"domain_slot" : "value"}
-        for slot in self.slot_meta:
+        for slot in self.slot_meta: # slot을 하나씩 돌며 state에 slot이 있으
             value = state.get(slot, "none") # 1개도 없을경우 none 반환
             target_id = self.trg_tokenizer.encode(value, add_special_tokens=False) + [
                 self.trg_tokenizer.sep_token_id
