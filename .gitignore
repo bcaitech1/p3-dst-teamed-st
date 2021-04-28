@@ -1,0 +1,9 @@
+venv/
+.idea/
+*.log
+*.pot
+*.pyc
+__pycache__/
+db.splite3
+
+
