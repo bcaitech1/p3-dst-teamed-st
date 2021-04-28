@@ -47,6 +47,9 @@ class TRADE(nn.Module):
         self.tie_weight()
 
     def tie_weight(self):
+        """
+        decoder embed weight랑 encoder embed weight를 일치시켜주는 함수
+        """
         self.decoder.embed.weight = self.encoder.embed.weight
         if self.decoder.proj_layer:
             self.decoder.proj_layer.weight = self.encoder.proj_layer.weight

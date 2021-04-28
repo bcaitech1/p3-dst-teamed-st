@@ -27,7 +27,7 @@ class OpenVocabDSTFeature:
     input_id: List[int]
     segment_id: List[int]
     gating_id: List[int]
-    target_ids: Optional[Union[List[int], List[List[int]]]]
+    target_ids: Optional[Union[List[int], List[List[int]]]] # Union : 여러개의 type 허용 , Optional : None도 허용
 
 
 class WOSDataset(Dataset):
@@ -94,12 +94,12 @@ def set_seed(seed):
 
 def split_slot(dom_slot_value, get_domain_slot=False):
     try:
-        dom, slot, value = dom_slot_value.split("-")
+        dom, slot, value = dom_slot_value.split("-") # 온전한 데이터
     except ValueError:
         tempo = dom_slot_value.split("-")
-        if len(tempo) < 2:
+        if len(tempo) < 2: # domain만 있을경우
             return dom_slot_value, dom_slot_value, dom_slot_value
-        dom, slot = tempo[0], tempo[1]
+        dom, slot = tempo[0], tempo[1] # domain, slot만 있을경우
         value = dom_slot_value.replace(f"{dom}-{slot}-", "").strip()
 
     if get_domain_slot:
@@ -122,10 +122,15 @@ def build_slot_meta(data):
 
 
 def convert_state_dict(state):
+    """
+    :param state: list
+    :return: dict
+    dic[s] = v : s = domain-slot(관광-종류) , v = value(박물관)
+    """
     dic = {}
     for slot in state:
-        s, v = split_slot(slot, get_domain_slot=True)
-        dic[s] = v
+        s, v = split_slot(slot, get_domain_slot=True) # s = domain-slot(관광-종류) , v = value(박물관)
+        dic[s] = v # dic[관광-종류] = 박물관
     return dic
 
 
@@ -167,12 +172,12 @@ def get_examples_from_dialogue(dialogue, user_first=False):
     history = []
     d_idx = 0
     for idx, turn in enumerate(dialogue["dialogue"]):
-        if turn["role"] != "user":
+        if turn["role"] != "user": # role 먼저 시작하는 경우 제외
             continue
 
-        if idx:
+        if idx: # not idx == 0
             sys_utter = dialogue["dialogue"][idx - 1]["text"]
-        else:
+        else: # idx is 0
             sys_utter = ""
 
         user_utter = turn["text"]
