@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, SequentialSampler
 from tqdm import tqdm
 from transformers import BertTokenizer
 
-from data_utils import (WOSDataset, get_examples_from_dialogues)
+from data_utils import WOSDataset, get_examples_from_dialogues
 from model import TRADE
 from preprocessor import TRADEPreprocessor
 
@@ -50,10 +50,10 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     args = parser.parse_args()
-    args.data_dir = os.environ['SM_CHANNEL_EVAL']
-    args.model_dir = os.environ['SM_CHANNEL_MODEL']
-    args.output_dir = os.environ['SM_OUTPUT_DATA_DIR']
-    
+    args.data_dir = os.environ["SM_CHANNEL_EVAL"]
+    # args.model_dir = os.environ['SM_CHANNEL_MODEL']
+    args.output_dir = os.environ["SM_OUTPUT_DATA_DIR"]
+
     model_dir_path = os.path.dirname(args.model_dir)
     eval_data = json.load(open(f"{args.data_dir}/eval_dials.json", "r"))
     config = json.load(open(f"{model_dir_path}/exp_config.json", "r"))
@@ -92,13 +92,13 @@ if __name__ == "__main__":
     print("Model is loaded")
 
     predictions = inference(model, eval_loader, processor, device)
-    
+
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
-    
+
     json.dump(
         predictions,
-        open(f"{args.output_dir}/predictions.csv", "w"),
+        open(f"{args.output_dir}/04127-predictions2.csv", "w"),
         indent=2,
         ensure_ascii=False,
     )

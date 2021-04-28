@@ -40,7 +40,7 @@ class TRADE(nn.Module):
 
         self.decoder.set_slot_idx(tokenized_slot_meta)
         self.tie_weight()
-        
+
     def set_subword_embedding(self, model_name_or_path):
         model = ElectraModel.from_pretrained(model_name_or_path)
         self.encoder.embed.weight = model.embeddings.word_embeddings.weight
@@ -66,6 +66,11 @@ class TRADE(nn.Module):
         )
 
         return all_point_outputs, all_gate_outputs
+
+
+class TRADEBERT(TRADE):
+    def __init__(self, config, tokenized_slot_meta, pad_idx=0):
+        super(TRADEBERT, self).__init__(config, tokenized_slot_meta, pad_idx)
 
 
 class GRUEncoder(nn.Module):
@@ -158,7 +163,7 @@ class SlotGenerator(nn.Module):
         all_point_outputs = torch.zeros(batch_size, J, max_len, self.vocab_size).to(
             input_ids.device
         )
-        
+
         # Parallel Decoding
         w = slot_e.repeat(batch_size, 1).unsqueeze(1)
         hidden = hidden.repeat_interleave(J, dim=1)
@@ -198,7 +203,11 @@ class SlotGenerator(nn.Module):
             _, w_idx = p_final.max(-1)
 
             if teacher is not None:
-                w = self.embedding(teacher[:, :, k]).transpose(0, 1).reshape(batch_size * J, 1, -1)
+                w = (
+                    self.embedding(teacher[:, :, k])
+                    .transpose(0, 1)
+                    .reshape(batch_size * J, 1, -1)
+                )
             else:
                 w = self.embedding(w_idx).unsqueeze(1)  # B,1,D
             if k == 0:
