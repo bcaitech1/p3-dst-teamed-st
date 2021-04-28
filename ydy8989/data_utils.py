@@ -5,7 +5,7 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional, Union
-
+import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -85,12 +85,16 @@ def load_dataset(dataset_path, dev_split=0.1):
 
 
 def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
     torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if use multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
     if torch.cuda.device_count() > 0:
         torch.cuda.manual_seed_all(seed)
-
 
 def split_slot(dom_slot_value, get_domain_slot=False):
     try:
@@ -238,7 +242,7 @@ class DSTPreprocessor:
             new_arrays.append(m.unsqueeze(0))
 
         return torch.cat(new_arrays, 0)
-
+    # DSTinputexample을 input feature로 바꾸는거
     def _convert_example_to_feature(self):
         raise NotImplementedError
 
