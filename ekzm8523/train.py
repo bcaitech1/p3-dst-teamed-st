@@ -13,52 +13,15 @@ from data_utils import (WOSDataset, get_examples_from_dialogues, load_dataset,
                         set_seed)
 from eval_utils import DSTEvaluator
 from evaluation import _evaluation
-from inference import inference
-from model import TRADE, masked_cross_entropy_for_value
-from preprocessor import TRADEPreprocessor
+from inference import inference_trade, inference_sumbt
+from model import TRADE, masked_cross_entropy_for_value, SUMBT
+from preprocessor import TRADEPreprocessor, SUMBTPreprocessor
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, default="data/train_dataset")
-    parser.add_argument("--model_dir", type=str, default="results")
-    parser.add_argument("--train_batch_size", type=int, default=16)
-    parser.add_argument("--eval_batch_size", type=int, default=32)
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--adam_epsilon", type=float, default=1e-8)
-    parser.add_argument("--max_grad_norm", type=float, default=1.0)
-    parser.add_argument("--num_train_epochs", type=int, default=30)
-    parser.add_argument("--warmup_ratio", type=int, default=0.1)
-    parser.add_argument("--random_seed", type=int, default=42)
-    parser.add_argument(
-        "--model_name_or_path",
-        type=str,
-        help="Subword Vocab만을 위한 huggingface model",
-        default="monologg/koelectra-base-v3-discriminator",
-    )
 
-    # Model Specific Argument
-    parser.add_argument("--hidden_size", type=int, help="GRU의 hidden size", default=768)
-    parser.add_argument(
-        "--vocab_size",
-        type=int,
-        help="vocab size, subword vocab tokenizer에 의해 특정된다",
-        default=None,
-    )
-    
-    parser.add_argument("--hidden_dropout_prob", type=float, default=0.1)
-    parser.add_argument("--proj_dim", type=int,
-                        help="만약 지정되면 기존의 hidden_size는 embedding dimension으로 취급되고, proj_dim이 GRU의 hidden_size로 사용됨. hidden_size보다 작아야 함.", default=None)
-    parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
-    args = parser.parse_args()
-    
-    # args.data_dir = os.environ['SM_CHANNEL_TRAIN']
-    # args.model_dir = os.environ['SM_MODEL_DIR']
-    print(args.data_dir)
-    print(args.model_dir)
-
+def train(args):
     # random seed 고정
     set_seed(args.random_seed)
 
@@ -138,17 +101,19 @@ if __name__ == "__main__":
 
     if not os.path.exists(args.model_dir):
         os.mkdir(args.model_dir)
+    if not os.path.exists(f"{args.model_dir}/{args.model}"):
+        os.mkdir(f"{args.model_dir}/{args.model}")
 
     json.dump(
         vars(args),
-        open(f"{args.model_dir}/exp_config.json", "w"),
+        open(f"{args.model_dir}/{args.model}/exp_config.json", "w"),
         indent=2,
         ensure_ascii=False,
     )
     
     json.dump(
         slot_meta,
-        open(f"{args.model_dir}/slot_meta.json", "w"),
+        open(f"{args.model_dir}/{args.model}/slot_meta.json", "w"),
         indent=2,
         ensure_ascii=False,
     )
@@ -199,7 +164,7 @@ if __name__ == "__main__":
                     f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}"
                 )
 
-        predictions = inference(model, dev_loader, processor, device)
+        predictions = inference_trade(model, dev_loader, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
         for k, v in eval_result.items():
             print(f"{k}: {v}")
@@ -208,6 +173,43 @@ if __name__ == "__main__":
             print("Update Best checkpoint!")
             best_score = eval_result['joint_goal_accuracy']
             best_checkpoint = epoch
-
-        torch.save(model.state_dict(), f"{args.model_dir}/model-{epoch}.bin")
+            torch.save(model.state_dict(), f"{args.model_dir}/{args.model}/best_model.bin")
     print(f"Best checkpoint: {args.model_dir}/model-{best_checkpoint}.bin")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir", type=str, default="/opt/ml/input/data/train_dataset")
+    parser.add_argument("--model_dir", type=str, default="/opt/ml/model/")
+    parser.add_argument("--model", type=str, default="trade", help="select trade or sumbt")
+    parser.add_argument("--train_batch_size", type=int, default=16)
+    parser.add_argument("--eval_batch_size", type=int, default=32)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--adam_epsilon", type=float, default=1e-8)
+    parser.add_argument("--max_grad_norm", type=float, default=1.0)
+    parser.add_argument("--num_train_epochs", type=int, default=30)
+    parser.add_argument("--warmup_ratio", type=int, default=0.1)
+    parser.add_argument("--random_seed", type=int, default=42)
+    parser.add_argument(
+        "--model_name_or_path",
+        type=str,
+        help="Subword Vocab만을 위한 huggingface model",
+        default="monologg/koelectra-base-v3-discriminator",
+    )
+    
+    # Model Specific Argument
+    parser.add_argument("--hidden_size", type=int, help="GRU의 hidden size", default=768)
+    parser.add_argument(
+        "--vocab_size",
+        type=int,
+        help="vocab size, subword vocab tokenizer에 의해 특정된다",
+        default=None,
+    )
+    
+    parser.add_argument("--hidden_dropout_prob", type=float, default=0.1)
+    parser.add_argument("--proj_dim", type=int,
+                        help="만약 지정되면 기존의 hidden_size는 embedding dimension으로 취급되고, proj_dim이 GRU의 hidden_size로 사용됨. hidden_size보다 작아야 함.",
+                        default=None)
+    parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
+    args = parser.parse_args()
+    train(args)
