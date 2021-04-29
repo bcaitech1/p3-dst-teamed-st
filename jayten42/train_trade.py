@@ -13,7 +13,7 @@ from data_utils import WOSDataset, get_examples_from_dialogues, load_dataset, se
 from eval_utils import DSTEvaluator
 from evaluation import _evaluation
 from inference import inference
-from model import TRADE, masked_cross_entropy_for_value
+from models import TRADE, masked_cross_entropy_for_value
 from preprocessor import TRADEPreprocessor
 
 import torch.cuda.amp as amp

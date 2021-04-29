@@ -8,7 +8,7 @@ from tqdm import tqdm
 from transformers import BertTokenizer
 
 from data_utils import WOSDataset, get_examples_from_dialogues
-from model import TRADE
+from models import TRADE
 from preprocessor import TRADEPreprocessor
 
 
