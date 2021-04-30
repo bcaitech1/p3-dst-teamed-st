@@ -265,10 +265,10 @@ class MultiHeadAttention(nn.Module):
         return output
 
     def forward(self, q, k, v, mask=None):
-        bs = q.size(0)
+        bs = q.size(0) # batch_size
 
         # perform linear operation and split into h heads
-        k = self.k_linear(k).view(bs, -1, self.h, self.d_k)
+        k = self.k_linear(k).view(bs, -1, self.h, self.d_k) # batch_size, sl, head_num, uttr_hidden // head_num
         q = self.q_linear(q).view(bs, -1, self.h, self.d_k)
         v = self.v_linear(v).view(bs, -1, self.h, self.d_k)
 
@@ -292,14 +292,14 @@ class SUMBT(nn.Module):
     def __init__(self, args, num_labels, device):
         super(SUMBT, self).__init__()
 
-        self.hidden_dim = args.hidden_dim
-        self.rnn_num_layers = args.num_rnn_layers
-        self.zero_init_rnn = args.zero_init_rnn
-        self.max_seq_length = args.max_seq_length
-        self.max_label_length = args.max_label_length
-        self.num_labels = num_labels
+        self.hidden_dim = args.hidden_dim # 300
+        self.rnn_num_layers = args.num_rnn_layers # 1
+        self.zero_init_rnn = args.zero_init_rnn # False
+        self.max_seq_length = args.max_seq_length # 64
+        self.max_label_length = args.max_label_length # 12
+        self.num_labels = num_labels # 45 label value length
         self.num_slots = len(num_labels)
-        self.attn_head = args.attn_head
+        self.attn_head = args.attn_head # 4
         self.device = device
 
         ### Utterance Encoder
@@ -308,7 +308,7 @@ class SUMBT(nn.Module):
         )
         self.bert_output_dim = self.utterance_encoder.config.hidden_size
         self.hidden_dropout_prob = self.utterance_encoder.config.hidden_dropout_prob
-        if args.fix_utterance_encoder:
+        if args.fix_utterance_encoder: # default = False
             for p in self.utterance_encoder.bert.pooler.parameters():
                 p.requires_grad = False
 
@@ -320,13 +320,13 @@ class SUMBT(nn.Module):
         for p in self.sv_encoder.bert.parameters():
             p.requires_grad = False
 
-        self.slot_lookup = nn.Embedding(self.num_slots, self.bert_output_dim)
+        self.slot_lookup = nn.Embedding(self.num_slots, self.bert_output_dim) # (45, utter hidden_size)
         self.value_lookup = nn.ModuleList(
-            [nn.Embedding(num_label, self.bert_output_dim) for num_label in num_labels]
-        )
+            [nn.Embedding(num_label, self.bert_output_dim) for num_label in num_labels] # (slot의 value 갯수, utter hidden size)
+        ) # 45, slot_value_num, uttr_hidden_size
 
         ### Attention layer
-        self.attn = MultiHeadAttention(self.attn_head, self.bert_output_dim, dropout=0)
+        self.attn = MultiHeadAttention(self.attn_head, self.bert_output_dim, dropout=0) # 4, utter hidden_size
 
         ### RNN Belief Tracker
         self.nbt = nn.GRU(
@@ -334,7 +334,7 @@ class SUMBT(nn.Module):
             hidden_size=self.hidden_dim,
             num_layers=self.rnn_num_layers,
             dropout=self.hidden_dropout_prob,
-            batch_first=True,
+            batch_first=True, # batch_size를 맨앞 shape로
         )
         self.init_parameter(self.nbt)
 
@@ -402,7 +402,7 @@ class SUMBT(nn.Module):
         n_gpu=1,
         target_slot=None,
     ):
-        # input_ids: [B, M, N]
+        # input_ids: [B, M, N] batch size, Max turn size, max sequence length
         # token_type_ids: [B, M, N]
         # attention_mask: [B, M, N]
         # labels: [B, M, J]
@@ -493,6 +493,7 @@ class SUMBT(nn.Module):
                 .repeat(1, 1, num_slot_labels, 1)
                 .view(ds * ts * num_slot_labels, -1)
             )
+            # if self.distance_metric == "euclidean":
             _dist = self.metric(_hid_label, _hidden).view(ds, ts, num_slot_labels)
             _dist = -_dist
             _, pred = torch.max(_dist, -1)

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="root@101.101.217.62:2222 key" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="root@101.101.217.62:2222" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
-      <paths name="root@101.101.217.62:2222 key">
+      <paths name="root@101.101.217.62:2222">
         <serverdata>
           <mappings>
             <mapping deploy="/opt/ml/code" local="$PROJECT_DIR$" />

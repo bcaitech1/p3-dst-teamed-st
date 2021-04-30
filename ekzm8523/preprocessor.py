@@ -178,11 +178,11 @@ class SUMBTPreprocessor(DSTPreprocessor):
                     label_idx = self.ontology[slot_type].index(value)
                 else:
                     label_idx = self.ontology[slot_type].index("none")
-                label.append(label_idx)
-            labels.append(label)
+                label.append(label_idx) # 45
+            labels.append(label) # turn length, 45
         num_turn = len(turns)
-        if len(turns) < self.max_turn_length:
-            gap = self.max_turn_length - len(turns)
+        if num_turn < self.max_turn_length:
+            gap = self.max_turn_length - num_turn
             for _ in range(gap):
                 dummy_turn = [self.src_tokenizer.pad_token_id] * self.max_seq_length
                 turns.append(dummy_turn)

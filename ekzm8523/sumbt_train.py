@@ -64,7 +64,7 @@ def train(args):
 	n_epochs = args.num_train_epochs
 	
 	model = SUMBT(args, num_labels, device)
-	model.initialize_slot_value_lookup(slot_values_ids, slot_type_ids)  # Tokenized Ontology의 Pre-encoding using BERT_SV
+	model.initialize_slot_value_lookup(slot_values_ids, slot_type_ids)  # slot_values_ids (45, value_num, 12), slot_type_ids (45, 12)
 	model.to(device)
 	print("Model is initialized")
 	
@@ -74,7 +74,7 @@ def train(args):
 		train_data,
 		batch_size=args.train_batch_size,
 		sampler=train_sampler,
-		collate_fn=processor.collate_fn,
+		collate_fn=processor.collate_fn, # feature를 tensor로 변경
 	)
 	print("# train:", len(train_data))
 	
