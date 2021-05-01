@@ -80,7 +80,7 @@ def train(args):
         collate_fn=processor.collate_fn,
     )
     print("# train:", len(train_data))
-
+    asdfasdfasdfasdf
     dev_data = WOSDataset(dev_features)
     dev_sampler = SequentialSampler(dev_data)
     dev_loader = DataLoader(
@@ -155,7 +155,6 @@ def train(args):
 
             if step_scheduler:
                 scheduler.step()
-
 
             if step % 50 == 0:
                 print('[%d/%d] [%d/%d] %f' % (epoch, n_epochs, step, len(train_loader), loss.item()))
