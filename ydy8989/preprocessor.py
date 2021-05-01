@@ -108,8 +108,7 @@ class SUMBTPreprocessor(DSTPreprocessor):
         trg_tokenizer=None,
         ontology=None,
         max_seq_length=64,
-        max_turn_length=14,
-    ):
+        max_turn_length=14,):
         self.slot_meta = slot_meta
         self.src_tokenizer = src_tokenizer
         self.trg_tokenizer = trg_tokenizer if trg_tokenizer else src_tokenizer
