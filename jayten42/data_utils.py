@@ -28,6 +28,8 @@ class OpenVocabDSTFeature:
     segment_id: List[int]
     gating_id: List[int]
     target_ids: Optional[Union[List[int], List[List[int]]]]
+    slot_positions: [List[int]] = None
+    domain_id: int = None
 
 
 class WOSDataset(Dataset):
@@ -135,6 +137,7 @@ class DSTInputExample:
     context_turns: List[str]
     current_turn: List[str]
     label: Optional[List[str]] = None
+    domains: List[str] = None
 
     def to_dict(self):
         return dataclasses.asdict(self)
@@ -166,6 +169,7 @@ def get_examples_from_dialogue(dialogue, user_first=False):
     examples = []
     history = []
     d_idx = 0
+    domains = dialogue["domains"]
     for idx, turn in enumerate(dialogue["dialogue"]):
         if turn["role"] != "user":
             continue
@@ -188,6 +192,7 @@ def get_examples_from_dialogue(dialogue, user_first=False):
                 context_turns=context,
                 current_turn=current_turn,
                 label=state,
+                domains=domains,
             )
         )
         history.append(sys_utter)
@@ -218,7 +223,9 @@ class DSTPreprocessor:
         if max_length < 0:
             max_length = max(list(map(len, arrays)))
 
-        arrays = [array + [pad_idx] * (max_length - len(array)) for array in arrays]
+        arrays = [
+            array + [pad_idx] * (max_length - min(len(array), 512)) for array in arrays
+        ]
         return arrays
 
     def pad_id_of_matrix(self, arrays, padding, max_length=-1, left=False):

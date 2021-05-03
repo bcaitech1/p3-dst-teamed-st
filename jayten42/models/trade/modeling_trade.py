@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import ElectraModel
+from transformers import ElectraModel, AutoConfig
 
 
 def masked_cross_entropy_for_value(logits, target, pad_idx=0):
@@ -68,9 +68,63 @@ class TRADE(nn.Module):
         return all_point_outputs, all_gate_outputs
 
 
-class TRADEBERT(TRADE):
+class TRADEBERT(nn.Module):
     def __init__(self, config, tokenized_slot_meta, pad_idx=0):
-        super(TRADEBERT, self).__init__(config, tokenized_slot_meta, pad_idx)
+        super(TRADEBERT, self).__init__()
+        self.encoder = BERTEncoder(config=config)
+        self.decoder = SlotGenerator(
+            config.vocab_size,
+            config.hidden_size,
+            config.hidden_dropout_prob,
+            config.n_gate,
+            config.proj_dim,
+            pad_idx,
+        )
+        self.decoder.set_slot_idx(tokenized_slot_meta)
+        self.tie_weight()
+
+    def tie_weight(self):
+        self.decoder.embed.weight = self.encoder.bert.embeddings.word_embeddings.weight
+
+    def forward(
+        self, input_ids, token_type_ids, attention_mask=None, max_len=10, teacher=None
+    ):
+        encoder_outputs, pooled_output = self.encoder(
+            input_ids=input_ids,
+            token_type_ids=token_type_ids,
+            attention_mask=attention_mask,
+        )
+        all_point_outputs, all_gate_outputs = self.decoder(
+            input_ids,
+            encoder_outputs,
+            pooled_output.unsqueeze(0),
+            attention_mask,
+            max_len,
+            teacher,
+        )
+
+        return all_point_outputs, all_gate_outputs
+
+
+class BERTEncoder(nn.Module):
+    """Some Information about BERTEncoder"""
+
+    def __init__(self, config):
+        super(BERTEncoder, self).__init__()
+        self.bert = ElectraModel.from_pretrained(config.model_name_or_path)
+        self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def forward(self, input_ids, token_type_ids, attention_mask):
+        output = self.bert(
+            input_ids=input_ids,
+            token_type_ids=token_type_ids,
+            attention_mask=attention_mask,
+            return_dict=True,
+            output_hidden_states=True,
+        )
+        pooled_output = self.pooler(output.hidden_states[1][:, 0, :])
+        return output.last_hidden_state, pooled_output
 
 
 class GRUEncoder(nn.Module):
@@ -102,6 +156,7 @@ class GRUEncoder(nn.Module):
         x = self.dropout(x)
         o, h = self.gru(x)
         o = o.masked_fill(mask, 0.0)
+        # bidirectional 이라 두개 이어주는거
         output = o[:, :, : self.d_model] + o[:, :, self.d_model :]
         hidden = h[0] + h[1]  # n_layer 고려
         return output, hidden
@@ -176,7 +231,7 @@ class SlotGenerator(nn.Module):
 
             # B,T,D * B,D,1 => B,T
             attn_e = torch.bmm(encoder_output, hidden.permute(1, 2, 0))  # B,T,1
-            attn_e = attn_e.squeeze(-1).masked_fill(input_masks, -1e9)
+            attn_e = attn_e.squeeze(-1).masked_fill(input_masks, -1e4)
             attn_history = F.softmax(attn_e, -1)  # B,T
 
             if self.proj_layer:

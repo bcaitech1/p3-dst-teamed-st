@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import random
-
+import pickle
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -13,7 +13,7 @@ from data_utils import WOSDataset, get_examples_from_dialogues, load_dataset, se
 from eval_utils import DSTEvaluator
 from evaluation import _evaluation
 from inference import inference
-from models import TRADE, TRADEBERT masked_cross_entropy_for_value
+from models import TRADE, TRADEBERT, masked_cross_entropy_for_value
 from preprocessor import TRADEPreprocessor
 
 import torch.cuda.amp as amp
@@ -28,8 +28,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default="TRADE")
 
-    parser.add_argument("--data_dir", type=str, default="data/train_dataset")
-    parser.add_argument("--model_dir", type=str, default="results")
+    parser.add_argument(
+        "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
+    )
+    parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
@@ -38,6 +40,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_train_epochs", type=int, default=30)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
     parser.add_argument("--random_seed", type=int, default=42)
+    parser.add_argument("--max_seq_length", type=int, default=256)
     parser.add_argument(
         "--model_name_or_path",
         type=str,
@@ -63,8 +66,8 @@ if __name__ == "__main__":
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     args = parser.parse_args()
 
-    args.data_dir = os.environ["SM_CHANNEL_TRAIN"]
-    args.model_dir = os.path.join(os.environ["SM_MODEL_DIR"], args.run_name)
+    # args.data_dir = os.environ["SM_CHANNEL_TRAIN"]
+    args.model_dir = os.path.join(args.model_dir, args.run_name)
 
     wandb.config.update(args)
     wandb.run.name = f"{args.run_name}-{wandb.run.id}"
@@ -73,27 +76,40 @@ if __name__ == "__main__":
     set_seed(args.random_seed)
 
     # Data Loading
-    train_data_file = f"{args.data_dir}/train_dials.json"
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))
-    train_data, dev_data, dev_labels = load_dataset(train_data_file)
-
-    train_examples = get_examples_from_dialogues(
-        train_data, user_first=False, dialogue_level=False
-    )
-    dev_examples = get_examples_from_dialogues(
-        dev_data, user_first=False, dialogue_level=False
-    )
-
-    # Define Preprocessor
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    processor = TRADEPreprocessor(slot_meta, tokenizer)
+    # Define Preprocessor
+    processor = TRADEPreprocessor(
+        slot_meta, tokenizer, max_seq_length=args.max_seq_length
+    )
     args.vocab_size = len(tokenizer)
     args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
 
-    # Extracting Featrues
-    train_features = processor.convert_examples_to_features(train_examples)
-    dev_features = processor.convert_examples_to_features(dev_examples)
+    if not os.path.exists(os.path.join(args.data_dir, "train_trade_features.pkl")):
+        print("Cached Input Features not Found.\nLoad data and save.")
+        train_data_file = f"{args.data_dir}/train_dials.json"
+        train_data, dev_data, dev_labels = load_dataset(train_data_file)
+        train_examples = get_examples_from_dialogues(
+            train_data, user_first=False, dialogue_level=False
+        )
+        dev_examples = get_examples_from_dialogues(
+            dev_data, user_first=False, dialogue_level=False
+        )
 
+        # Extracting Featrues
+        train_features = processor.convert_examples_to_features(train_examples)
+        dev_features = processor.convert_examples_to_features(dev_examples)
+        print("Save Data")
+        with open(os.path.join(args.data_dir, "train_trade_features.pkl"), "wb") as f:
+            pickle.dump(train_features, f)
+        with open(os.path.join(args.data_dir, "dev_trade_features.pkl"), "wb") as f:
+            pickle.dump(dev_features, f)
+    else:
+        print("Cached Input Features Found.\nLoad data from Cached")
+        with open(os.path.join(args.data_dir, "train_trade_features.pkl"), "rb") as f:
+            train_features = pickle.load(f)
+        with open(os.path.join(args.data_dir, "dev_trade_features.pkl"), "rb") as f:
+            dev_features = pickle.load(f)
     # Slot Meta tokenizing for the decoder initial inputs
     tokenized_slot_meta = []
     for slot in slot_meta:
@@ -102,10 +118,10 @@ if __name__ == "__main__":
         )
 
     # Model 선언
-    model = TRADE(args, tokenized_slot_meta)
-    model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
+    model = TRADEBERT(args, tokenized_slot_meta)
+    # model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
     wandb.watch(model)
-    print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
+    # print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
     model.to(device)
     print("Model is initialized")
 
@@ -177,7 +193,11 @@ if __name__ == "__main__":
                     tf = None
 
                 all_point_outputs, all_gate_outputs = model(
-                    input_ids, segment_ids, input_masks, target_ids.size(-1), tf
+                    input_ids=input_ids,
+                    token_type_ids=segment_ids,
+                    attention_mask=input_masks,
+                    max_len=target_ids.size(-1),
+                    teacher=tf,
                 )
 
                 # generation loss
@@ -220,7 +240,7 @@ if __name__ == "__main__":
             if best_score < eval_result["joint_goal_accuracy"]:
                 print("Update Best checkpoint!")
                 best_score = eval_result["joint_goal_accuracy"]
-                best_checkpoint = epoch
+            best_checkpoint = epoch
 
         torch.save(model.state_dict(), f"{args.model_dir}/model-{epoch}.bin")
     print(f"Best checkpoint: {args.model_dir}/model-{best_checkpoint}.bin")

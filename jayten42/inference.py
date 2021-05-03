@@ -8,7 +8,7 @@ from tqdm import tqdm
 from transformers import BertTokenizer
 
 from data_utils import WOSDataset, get_examples_from_dialogues
-from models import TRADE
+from models import TRADE, masked_cross_entropy_for_value
 from preprocessor import TRADEPreprocessor
 
 
