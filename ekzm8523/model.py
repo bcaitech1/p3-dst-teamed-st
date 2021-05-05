@@ -61,12 +61,12 @@ class TRADE(nn.Module):
         self, input_ids, token_type_ids, attention_mask=None, max_len=10, teacher=None
     ):
 
-        encoder_outputs, pooled_output = self.encoder(input_ids=input_ids)
+        encoder_outputs, pooled_output = self.encoder(input_ids=input_ids) # pooled_output -> gru의 마지막 hidden state
         all_point_outputs, all_gate_outputs = self.decoder(
             input_ids,
-            encoder_outputs,
-            pooled_output.unsqueeze(0),
-            attention_mask,
+            encoder_outputs,    # batch, vocab_size, emb_size
+            pooled_output.unsqueeze(0),     # 1, batch, emb_size
+            attention_mask,     # batch, vocab_size
             max_len,
             teacher,
         )
@@ -81,7 +81,7 @@ class GRUEncoder(nn.Module):
         self.embed = nn.Embedding(vocab_size, d_model, padding_idx=pad_idx)
         if proj_dim:
             self.proj_layer = nn.Linear(d_model, proj_dim, bias=False)
-        else:
+        else:   # default
             self.proj_layer = None
 
         self.d_model = proj_dim if proj_dim else d_model
@@ -96,16 +96,16 @@ class GRUEncoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, input_ids):
-        mask = input_ids.eq(self.pad_idx).unsqueeze(-1)
-        x = self.embed(input_ids)
-        if self.proj_layer:
+        mask = input_ids.eq(self.pad_idx).unsqueeze(-1) # (batch_size, vocab_size, 1)
+        x = self.embed(input_ids)   # (bath_size, vocab_size, embedding_size)
+        if self.proj_layer:     # default == None
             x = self.proj_layer(x)
         x = self.dropout(x)
         o, h = self.gru(x)
         o = o.masked_fill(mask, 0.0)
-        output = o[:, :, : self.d_model] + o[:, :, self.d_model :]
+        output = o[:, :, : self.d_model] + o[:, :, self.d_model :] # summation
         hidden = h[0] + h[1]  # n_layer 고려
-        return output, hidden
+        return output, hidden   # output -> (batch_size, vocab_size, embedding_size) , hidden -> (batch_size, embedding_size)
 
 
 class SlotGenerator(nn.Module):
@@ -125,16 +125,16 @@ class SlotGenerator(nn.Module):
             self.proj_layer = None
         self.hidden_size = proj_dim if proj_dim else hidden_size
 
-        self.gru = nn.GRU(
+        self.gru = nn.GRU(  # pointer Generator
             self.hidden_size, self.hidden_size, 1, dropout=dropout, batch_first=True
         )
         self.n_gate = n_gate
         self.dropout = nn.Dropout(dropout)
         self.w_gen = nn.Linear(self.hidden_size * 3, 1)
         self.sigmoid = nn.Sigmoid()
-        self.w_gate = nn.Linear(self.hidden_size, n_gate)
+        self.w_gate = nn.Linear(self.hidden_size, n_gate) # slot Gate Classifier
 
-    def set_slot_idx(self, slot_vocab_idx):
+    def set_slot_idx(self, slot_vocab_idx):     # packing
         whole = []
         max_length = max(map(len, slot_vocab_idx))
         for idx in slot_vocab_idx:
@@ -153,24 +153,24 @@ class SlotGenerator(nn.Module):
     def forward(
         self, input_ids, encoder_output, hidden, input_masks, max_len, teacher=None
     ):
-        input_masks = input_masks.ne(1)
+        input_masks = input_masks.ne(1)     # not equal , (batch, vocab_size)
         # J, slot_meta : key : [domain, slot] ex> LongTensor([1,2])
         # J,2
         batch_size = encoder_output.size(0)
-        slot = torch.LongTensor(self.slot_embed_idx).to(input_ids.device)  ##
-        slot_e = torch.sum(self.embedding(slot), 1)  # J,d
+        slot = torch.LongTensor(self.slot_embed_idx).to(input_ids.device)  # 45, 4
+        slot_e = torch.sum(self.embedding(slot), 1)  # J , emb_size 768
         J = slot_e.size(0)
 
         all_point_outputs = torch.zeros(batch_size, J, max_len, self.vocab_size).to(
             input_ids.device
-        )
+        )   # (BS, J, max_len, vocab_size(35000))
         
         # Parallel Decoding
-        w = slot_e.repeat(batch_size, 1).unsqueeze(1)
-        hidden = hidden.repeat_interleave(J, dim=1)
-        encoder_output = encoder_output.repeat_interleave(J, dim=0)
-        input_ids = input_ids.repeat_interleave(J, dim=0)
-        input_masks = input_masks.repeat_interleave(J, dim=0)
+        w = slot_e.repeat(batch_size, 1).unsqueeze(1)   # (BS * J, 1, embed_size)
+        hidden = hidden.repeat_interleave(J, dim=1) # (1, BS * J, embed_size)
+        encoder_output = encoder_output.repeat_interleave(J, dim=0) # (BS * J, vocab, embed)
+        input_ids = input_ids.repeat_interleave(J, dim=0) # (BS * J, vocab)
+        input_masks = input_masks.repeat_interleave(J, dim=0) # (BS * J, vocab)
         for k in range(max_len):
             w = self.dropout(w)
             _, hidden = self.gru(w, hidden)  # 1,B,D
@@ -183,7 +183,7 @@ class SlotGenerator(nn.Module):
             if self.proj_layer:
                 hidden_proj = torch.matmul(hidden, self.proj_layer.weight)
             else:
-                hidden_proj = hidden
+                hidden_proj = hidden # (1, BS * J, embed_size)
 
             # B,D * D,V => B,V
             attn_v = torch.matmul(
@@ -196,7 +196,7 @@ class SlotGenerator(nn.Module):
             p_gen = self.sigmoid(
                 self.w_gen(torch.cat([w, hidden.transpose(0, 1), context], -1))
             )  # B,1
-            p_gen = p_gen.squeeze(-1)
+            p_gen = p_gen.squeeze(-1) # 720, 1 -> 720
 
             p_context_ptr = torch.zeros_like(attn_vocab).to(input_ids.device)
             p_context_ptr.scatter_add_(1, input_ids, attn_history)  # copy B,V
@@ -208,11 +208,11 @@ class SlotGenerator(nn.Module):
             else:
                 w = self.embedding(w_idx).unsqueeze(1)  # B,1,D
             if k == 0:
-                gated_logit = self.w_gate(context.squeeze(1))  # B,3
-                all_gate_outputs = gated_logit.view(batch_size, J, self.n_gate)
+                gated_logit = self.w_gate(context.squeeze(1))  # (B,3)
+                all_gate_outputs = gated_logit.view(batch_size, J, self.n_gate) # (16, 45, 3)
             all_point_outputs[:, :, k, :] = p_final.view(batch_size, J, self.vocab_size)
 
-        return all_point_outputs, all_gate_outputs
+        return all_point_outputs, all_gate_outputs # (16, 45, 9, 35000) , (16, 45 ,3)
 
 class BertForUtteranceEncoding(BertPreTrainedModel):
     def __init__(self, config):
@@ -251,11 +251,19 @@ class MultiHeadAttention(nn.Module):
     def attention(self, q, k, v, d_k, mask=None, dropout=None):
 
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
-
+        # q == 3060, 4, 1, 192
+        # k == 3060, 4, 64, 192
+        # scores == 3060, 4, 1, 64
         if mask is not None:
-            mask = mask.unsqueeze(1)
-            scores = scores.masked_fill(mask == 0, -1e9)
-        scores = F.softmax(scores, dim=-1)
+            mask = mask.unsqueeze(1) # 3060, 1, 1, 64
+
+            # fp 16 호환용
+            mask = mask.to(dtype=scores.dtype)
+            mask = (1.0 - mask) * -10000.0
+            scores = scores + mask
+
+            # scores = scores.masked_fill(mask == 0, -1e9)
+        scores = F.softmax(scores, dim=-1) # 3060, 4, 1, 64
 
         if dropout is not None:
             scores = dropout(scores)
@@ -265,15 +273,15 @@ class MultiHeadAttention(nn.Module):
         return output
 
     def forward(self, q, k, v, mask=None):
-        bs = q.size(0)
+        bs = q.size(0) # batch_size
 
         # perform linear operation and split into h heads
-        k = self.k_linear(k).view(bs, -1, self.h, self.d_k)
-        q = self.q_linear(q).view(bs, -1, self.h, self.d_k)
-        v = self.v_linear(v).view(bs, -1, self.h, self.d_k)
+        k = self.k_linear(k).view(bs, -1, self.h, self.d_k) # batch_size, sl, head_num, uttr_hidden // head_num
+        q = self.q_linear(q).view(bs, -1, self.h, self.d_k) # 3060, 768 -> 3060, 1, 4, 192
+        v = self.v_linear(v).view(bs, -1, self.h, self.d_k) # 3060, 64, 768 -> 3060, 64, 4, 192
 
         # transpose to get dimensions bs * h * sl * d_model
-        k = k.transpose(1, 2)
+        k = k.transpose(1, 2)   # 3060, 64, 4, 192 -> 3060, 4, 64, 192
         q = q.transpose(1, 2)
         v = v.transpose(1, 2)
 
@@ -292,14 +300,14 @@ class SUMBT(nn.Module):
     def __init__(self, args, num_labels, device):
         super(SUMBT, self).__init__()
 
-        self.hidden_dim = args.hidden_dim
-        self.rnn_num_layers = args.num_rnn_layers
-        self.zero_init_rnn = args.zero_init_rnn
-        self.max_seq_length = args.max_seq_length
-        self.max_label_length = args.max_label_length
-        self.num_labels = num_labels
+        self.hidden_dim = args.hidden_dim # 300
+        self.rnn_num_layers = args.num_rnn_layers # 1
+        self.zero_init_rnn = args.zero_init_rnn # False
+        self.max_seq_length = args.max_seq_length # 64
+        self.max_label_length = args.max_label_length # 12
+        self.num_labels = num_labels # 45 label value length
         self.num_slots = len(num_labels)
-        self.attn_head = args.attn_head
+        self.attn_head = args.attn_head # 4
         self.device = device
 
         ### Utterance Encoder
@@ -308,7 +316,7 @@ class SUMBT(nn.Module):
         )
         self.bert_output_dim = self.utterance_encoder.config.hidden_size
         self.hidden_dropout_prob = self.utterance_encoder.config.hidden_dropout_prob
-        if args.fix_utterance_encoder:
+        if args.fix_utterance_encoder: # default = False
             for p in self.utterance_encoder.bert.pooler.parameters():
                 p.requires_grad = False
 
@@ -320,13 +328,13 @@ class SUMBT(nn.Module):
         for p in self.sv_encoder.bert.parameters():
             p.requires_grad = False
 
-        self.slot_lookup = nn.Embedding(self.num_slots, self.bert_output_dim)
+        self.slot_lookup = nn.Embedding(self.num_slots, self.bert_output_dim) # (45, utter hidden_size)
         self.value_lookup = nn.ModuleList(
-            [nn.Embedding(num_label, self.bert_output_dim) for num_label in num_labels]
-        )
+            [nn.Embedding(num_label, self.bert_output_dim) for num_label in num_labels] # (slot의 value 갯수, utter hidden size)
+        ) # 45, slot_value_num, uttr_hidden_size
 
         ### Attention layer
-        self.attn = MultiHeadAttention(self.attn_head, self.bert_output_dim, dropout=0)
+        self.attn = MultiHeadAttention(self.attn_head, self.bert_output_dim, dropout=0) # 4, utter hidden_size
 
         ### RNN Belief Tracker
         self.nbt = nn.GRU(
@@ -334,7 +342,7 @@ class SUMBT(nn.Module):
             hidden_size=self.hidden_dim,
             num_layers=self.rnn_num_layers,
             dropout=self.hidden_dropout_prob,
-            batch_first=True,
+            batch_first=True, # batch_size를 맨앞 shape로
         )
         self.init_parameter(self.nbt)
 
@@ -396,20 +404,20 @@ class SUMBT(nn.Module):
     def forward(
         self,
         input_ids,
-        token_type_ids,
-        attention_mask,
-        labels=None,
+        token_type_ids, # segment_ids
+        attention_mask, # input_masks
+        labels=None, # target_ids
         n_gpu=1,
         target_slot=None,
     ):
-        # input_ids: [B, M, N]
+        # input_ids: [B, M, N] batch size, Max turn size, max sequence length
         # token_type_ids: [B, M, N]
         # attention_mask: [B, M, N]
         # labels: [B, M, J]
 
         # if target_slot is not specified, output values corresponding all slot-types
         if target_slot is None:
-            target_slot = list(range(0, self.num_slots))
+            target_slot = list(range(0, self.num_slots)) # [0, 1, ...., 45]
 
         ds = input_ids.size(0)  # Batch size (B)
         ts = input_ids.size(1)  # Max turn size (M)
@@ -417,31 +425,28 @@ class SUMBT(nn.Module):
         slot_dim = len(target_slot)  # J
 
         # Utterance encoding
-        hidden, _ = self.utterance_encoder(
-            input_ids.view(-1, self.max_seq_length),
+        hidden, _ = self.utterance_encoder( # B * M, N, 768
+            input_ids.view(-1, self.max_seq_length),    # (B * M , N)
             token_type_ids.view(-1, self.max_seq_length),
             attention_mask.view(-1, self.max_seq_length),
         )
         hidden = torch.mul(
-            hidden,
-            attention_mask.view(-1, self.max_seq_length, 1)
-            .expand(hidden.size())
-            .float(),
+            hidden, attention_mask.view(-1, self.max_seq_length, 1).expand(hidden.size()).float(),
         )
         hidden = hidden.repeat(slot_dim, 1, 1)  # [J*M*B, N, H]
 
         hid_slot = self.slot_lookup.weight[
             target_slot, :
         ]  # Select target slot embedding
-        hid_slot = hid_slot.repeat(1, bs).view(bs * slot_dim, -1)  # [J*M*B, N, H]
+        hid_slot = hid_slot.repeat(1, bs).view(bs * slot_dim, -1)  # [J*M*B, H]
 
         # Attended utterance vector
         hidden = self.attn(
-            hid_slot,  # q^s  [J*M*B, N, H]
+            hid_slot,  # q^s  [J*M*B, H]
             hidden,  # U [J*M*B, N, H]
             hidden,  # U [J*M*B, N, H]
             mask=attention_mask.view(-1, 1, self.max_seq_length).repeat(slot_dim, 1, 1),
-        )
+        ) # J*M*B, 1, H
         hidden = hidden.squeeze()  # h [J*M*B, H] Aggregated Slot Context
         hidden = hidden.view(slot_dim, ds, ts, -1).view(
             -1, ts, self.bert_output_dim
@@ -455,8 +460,8 @@ class SUMBT(nn.Module):
                 self.device
             )  # [1, slot_dim*ds, hidden]
         else:
-            h = hidden[:, 0, :].unsqueeze(0).repeat(self.rnn_num_layers, 1, 1)
-            h = self.rnn_init_linear(h)
+            h = hidden[:, 0, :].unsqueeze(0).repeat(self.rnn_num_layers, 1, 1) # 1, 360, 768
+            h = self.rnn_init_linear(h) # 1, 360, 300
 
         if isinstance(self.nbt, nn.GRU):
             rnn_out, _ = self.nbt(hidden, h)  # [J*B, M, H_GRU]
@@ -467,9 +472,9 @@ class SUMBT(nn.Module):
                 self.device
             )  # [1, slot_dim*ds, hidden]
             rnn_out, _ = self.nbt(hidden, (h, c))  # [slot_dim*ds, turn, hidden]
-        rnn_out = self.layer_norm(self.linear(self.dropout(rnn_out)))
+        rnn_out = self.layer_norm(self.linear(self.dropout(rnn_out))) # [360, 34, 768]
 
-        hidden = rnn_out.view(slot_dim, ds, ts, -1)  # [J, B, M, H_GRU]
+        hidden = rnn_out.view(slot_dim, ds, ts, -1)  # [J, B, M, H]
 
         # Label (slot-value) encoding
         loss = 0
@@ -478,7 +483,7 @@ class SUMBT(nn.Module):
         output = []
         for s, slot_id in enumerate(target_slot):  ## note: target_slots are successive
             # loss calculation
-            hid_label = self.value_lookup[slot_id].weight
+            hid_label = self.value_lookup[slot_id].weight # [4, H]
             num_slot_labels = hid_label.size(0)
 
             _hid_label = (
@@ -486,15 +491,16 @@ class SUMBT(nn.Module):
                 .unsqueeze(0)
                 .repeat(ds, ts, 1, 1)
                 .view(ds * ts * num_slot_labels, -1)
-            )
+            ) # [B * M * num_slot_labels, H]
             _hidden = (
                 hidden[s, :, :, :]
                 .unsqueeze(2)
                 .repeat(1, 1, num_slot_labels, 1)
                 .view(ds * ts * num_slot_labels, -1)
             )
+            # if self.distance_metric == "euclidean":
             _dist = self.metric(_hid_label, _hidden).view(ds, ts, num_slot_labels)
-            _dist = -_dist
+            _dist = -_dist # [B, M, num_slot_labels]
             _, pred = torch.max(_dist, -1)
             pred_slot.append(pred.view(ds, ts, 1))
             output.append(_dist)
@@ -504,7 +510,7 @@ class SUMBT(nn.Module):
                 loss_slot.append(_loss.item())
                 loss += _loss
 
-        pred_slot = torch.cat(pred_slot, 2)
+        pred_slot = torch.cat(pred_slot, 2) # slot별로 [B, M, 1] 45개 -> [B, M, 45]
         if labels is None:
             return output, pred_slot
 
