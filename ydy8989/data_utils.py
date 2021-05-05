@@ -65,7 +65,7 @@ def load_dataset(dataset_path, dev_split=0.1):
             dev_data.append(d)
         else:
             train_data.append(d)
-
+    # dev 부분
     dev_labels = {}
     for dialogue in dev_data:
         d_idx = 0
@@ -251,3 +251,22 @@ class DSTPreprocessor:
 
     def recover_state(self):
         raise NotImplementedError
+
+def tokenize_ontology(ontology, tokenizer, max_seq_length=12):
+    slot_types = []
+    slot_values = []
+    for k, v in ontology.items():
+        tokens = tokenizer.encode(k)
+        if len(tokens) < max_seq_length:
+            gap = max_seq_length - len(tokens)
+            tokens.extend([tokenizer.pad_token_id] *  gap)
+        slot_types.append(tokens)
+        slot_value = []
+        for vv in v:
+            tokens = tokenizer.encode(vv)
+            if len(tokens) < max_seq_length:
+                gap = max_seq_length - len(tokens)
+                tokens.extend([tokenizer.pad_token_id] *  gap)
+            slot_value.append(tokens)
+        slot_values.append(torch.LongTensor(slot_value))
+    return torch.LongTensor(slot_types), slot_values

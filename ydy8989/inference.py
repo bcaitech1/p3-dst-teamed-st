@@ -10,7 +10,8 @@ from transformers import BertTokenizer
 from data_utils import (WOSDataset, get_examples_from_dialogues)
 from model import TRADE
 from preprocessor import TRADEPreprocessor
-
+from torch.cuda.amp import autocast,  GradScaler
+use_amp = True # fp16 사용할지 안할지 정함
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -21,6 +22,29 @@ def postprocess_state(state):
         state[i] = s.replace(" , ", ", ")
     return state
 
+
+def inference_sumbt(model, eval_loader, processor, device):
+    model.eval()
+    predictions = {}
+
+    for step, batch in tqdm(enumerate(eval_loader), total=len(eval_loader)):
+        input_ids, segment_ids, input_masks, target_ids, num_turns, guids = \
+            [b.to(device) if not isinstance(b, list) else b for b in batch]
+
+        # 변경 시작
+        with torch.no_grad():
+            with autocast(enabled=use_amp):
+                output, pred_slot = model(input_ids, segment_ids, input_masks, None, 1)
+        # 변경 끝
+
+        pred_slot = pred_slot.detach().cpu()
+
+        for guid, num_turn, p_slot in zip(guids, num_turns, pred_slot):
+            pred_states = processor.recover_state(p_slot, num_turn)
+            for t_idx, pred_state in enumerate(pred_states):
+                predictions[f'{guid}-{t_idx}'] = pred_state
+
+    return predictions
 
 def inference(model, eval_loader, processor, device):
     model.eval()
@@ -41,7 +65,6 @@ def inference(model, eval_loader, processor, device):
             prediction = postprocess_state(prediction)
             predictions[guid] = prediction
     return predictions
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
