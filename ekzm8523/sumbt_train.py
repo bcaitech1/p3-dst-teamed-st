@@ -1,8 +1,9 @@
 import argparse
 import json
 import os
+import pickle
 import random
-
+import time
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -16,6 +17,8 @@ from evaluation import _evaluation
 from inference import inference_trade, inference_sumbt
 from model import TRADE, masked_cross_entropy_for_value, SUMBT
 from preprocessor import TRADEPreprocessor, SUMBTPreprocessor
+
+from torch.cuda.amp import autocast, GradScaler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -51,10 +54,14 @@ def train(args):
 	
 	# Extracting Featrues
 	# OpenVocabDSTFeature [guid, input_id, segment_id, gating_id, target_ids]
-	train_features = processor.convert_examples_to_features(train_examples)
-	dev_features = processor.convert_examples_to_features(dev_examples)
-	
+	# train_features = processor.convert_examples_to_features(train_examples)
+	# dev_features = processor.convert_examples_to_features(dev_examples)
+	with open('sumbt_data/train_features.bin', 'rb') as f:
+		train_features = pickle.load(f)
+	with open('sumbt_data/dev_features.bin', 'rb') as f:
+		dev_features = pickle.load(f)
 	# Ontology pre encoding
+	# 45, 12 / 45
 	slot_type_ids, slot_values_ids = tokenize_ontology(ontology, tokenizer, 12)
 	num_labels = [len(s) for s in slot_values_ids]  # 각 Slot 별 후보 Values의 갯수
 	
@@ -99,7 +106,7 @@ def train(args):
 		{
 			"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
 			"weight_decay": 0.0,
-		},
+		}
 	]
 	
 	t_total = len(train_loader) * n_epochs
@@ -126,39 +133,62 @@ def train(args):
 		indent=2,
 		ensure_ascii=False,
 	)
-	
+
+	scaler = GradScaler(enabled=args.use_amp)
+
 	best_score, best_checkpoint = 0, 0
 	for epoch in range(n_epochs):
+		start = time.time()
 		batch_loss = []
 		model.train()
 		for step, batch in enumerate(train_loader):
 			input_ids, segment_ids, input_masks, target_ids, num_turns, guids = [
 				b.to(device) if not isinstance(b, list) else b for b in batch
 			]
-			
 			# Forward
-			if n_gpu == 1:
-				loss, loss_slot, acc, acc_slot, _ = model(input_ids, segment_ids, input_masks, target_ids, n_gpu)
+			if args.use_amp:
+				with autocast(enabled=args.use_amp):
+					if n_gpu == 1:
+						loss, loss_slot, acc, acc_slot, _ = model(input_ids, segment_ids, input_masks, target_ids, n_gpu)
+					else:
+						loss, _, acc, acc_slot, _ = model(input_ids, segment_ids, input_masks, target_ids, n_gpu)
 			else:
-				loss, _, acc, acc_slot, _ = model(input_ids, segment_ids, input_masks, target_ids, n_gpu)
+				if n_gpu == 1:
+					loss, loss_slot, acc, acc_slot, _ = model(input_ids, segment_ids, input_masks, target_ids, n_gpu)
+				else:
+					loss, _, acc, acc_slot, _ = model(input_ids, segment_ids, input_masks, target_ids, n_gpu)
 			batch_loss.append(loss.item())
-			
-			loss.backward()
-			nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-			optimizer.step()
-			scheduler.step()
-			optimizer.zero_grad()
+
+			# Backward
+			if args.use_amp:
+				loss.backward()
+				nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+				optimizer.step()
+				scheduler.step()
+				optimizer.zero_grad()
+			else:
+				scaler.scale(loss).backward()
+				scaler.unscale_(optimizer)
+				nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+				scaler.step(optimizer)
+
+				scale = scaler.get_scale()
+				scaler.update()
+				step_scheduler = scaler.get_scale() == scale
+
+				if step_scheduler:
+					scheduler.step()
 			
 			if step % 100 == 0:
 				print(
-					f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()}"
+					f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} time: {time.time() - start}"
 				)
 		
-		predictions = inference_sumbt(model, dev_loader, processor, device)
+		predictions = inference_sumbt(model, dev_loader, processor, device, args.use_amp)
 		eval_result = _evaluation(predictions, dev_labels, slot_meta)
 		for k, v in eval_result.items():
 			print(f"{k}: {v}")
-		
+		print(f" 걸린 시간 : {time.time() - start}")
 		if best_score < eval_result['joint_goal_accuracy']:
 			print("Update Best checkpoint!")
 			best_score = eval_result['joint_goal_accuracy']
@@ -211,8 +241,8 @@ if __name__ == "__main__":
 	parser.add_argument("--max_seq_length", type=int, default=64)
 	parser.add_argument("--zero_init_rnn", type=bool, default=False)
 	parser.add_argument("--num_rnn_layers", type=int, default=1)
-	
-	
+	parser.add_argument("--use_amp", type=bool, default=True)
+
 	args = parser.parse_args()
 	print(args)
 	train(args)
