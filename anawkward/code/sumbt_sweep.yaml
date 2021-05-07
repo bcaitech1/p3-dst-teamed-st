@@ -1,0 +1,43 @@
+name: sumbt
+program: sumbt.py
+method: bayes
+metric:
+  name: joint_goal_accuracy
+  goal: maxmize
+parameters:
+  hidden_dim:
+    value: 300
+  num_rnn_layers:
+    value: 1
+  zero_init_rnn:
+    value: False
+  max_seq_length:
+    value: 64
+  max_label_length:
+    value: 12
+  attn_head:
+    value: 4
+  fix_utterance_encoder:
+    value: False
+  task_name:
+    value: 'sumbtgru'
+  distance_metric:
+    value: 'euclidean'
+  model_name_or_path:
+    value: 'dsksd/bert-ko-small-minimal'
+  warmup_ratio:
+    value: 0.1
+  learning_rate:
+    value: 5e-5
+  weight_decay:
+    value: 0.01
+  num_train_epochs:
+    value: 10
+  train_batch_size:
+    value: 8
+  eval_batch_size:
+    value: 8
+  adam_epsilon:
+    value: 1e-8
+  optimizer:
+    value: "adamw"

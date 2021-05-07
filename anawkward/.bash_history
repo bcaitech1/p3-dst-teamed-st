@@ -1,0 +1,3 @@
+pwd
+ipconfig
+which python

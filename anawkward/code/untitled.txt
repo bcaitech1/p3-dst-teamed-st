@@ -1,0 +1,9 @@
+export SM_CHANNEL_TRAIN=./input/data/train_dataset;
+export SM_MODEL_DIR=./trained_model;
+export SM_CHANNEL_EVAL=./input/data/eval_dataset;
+export SM_OUTPUT_DATA_DIR=.;
+
+python ./code/train.py
+python ./code/sumbt.py
+python ./code/inference.py --model_dir=./trained_model/model-29.bin;
+python ./code/inference.py --model_dir=./trained_model/model-29.bin data_dir=;

@@ -1,0 +1,12 @@
+{
+  "base_url": "/",
+  "hostname": "0.0.0.0",
+  "password": false,
+  "pid": 20,
+  "port": 8888,
+  "root_dir": "/opt/ml",
+  "secure": false,
+  "token": "BAQKHRsVAQFBQ01YJwJMDwwDWw8bAg",
+  "url": "http://0.0.0.0:8888/",
+  "version": "1.6.4"
+}

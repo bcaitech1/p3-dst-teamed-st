@@ -1,0 +1,17 @@
+program: train.py
+method: bayes
+metric:
+  name: val_loss
+  goal: minimize
+parameters:
+  learning_rate:
+    min: 0.0001
+    max: 0.01
+  optimizer:
+    value: "adamW" # adam, adamW
+  train_batch_size:
+    value: 16
+  adam_epsilon:
+    value: 1e-8
+  warmup_ratio:
+    value: 0.1
