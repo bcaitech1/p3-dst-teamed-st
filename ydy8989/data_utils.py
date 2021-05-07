@@ -5,7 +5,7 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional, Union
-
+import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -65,7 +65,7 @@ def load_dataset(dataset_path, dev_split=0.1):
             dev_data.append(d)
         else:
             train_data.append(d)
-
+    # dev 부분
     dev_labels = {}
     for dialogue in dev_data:
         d_idx = 0
@@ -85,12 +85,16 @@ def load_dataset(dataset_path, dev_split=0.1):
 
 
 def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
     torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if use multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
     if torch.cuda.device_count() > 0:
         torch.cuda.manual_seed_all(seed)
-
 
 def split_slot(dom_slot_value, get_domain_slot=False):
     try:
@@ -238,7 +242,7 @@ class DSTPreprocessor:
             new_arrays.append(m.unsqueeze(0))
 
         return torch.cat(new_arrays, 0)
-
+    # DSTinputexample을 input feature로 바꾸는거
     def _convert_example_to_feature(self):
         raise NotImplementedError
 
@@ -247,3 +251,22 @@ class DSTPreprocessor:
 
     def recover_state(self):
         raise NotImplementedError
+
+def tokenize_ontology(ontology, tokenizer, max_seq_length=12):
+    slot_types = []
+    slot_values = []
+    for k, v in ontology.items():
+        tokens = tokenizer.encode(k)
+        if len(tokens) < max_seq_length:
+            gap = max_seq_length - len(tokens)
+            tokens.extend([tokenizer.pad_token_id] *  gap)
+        slot_types.append(tokens)
+        slot_value = []
+        for vv in v:
+            tokens = tokenizer.encode(vv)
+            if len(tokens) < max_seq_length:
+                gap = max_seq_length - len(tokens)
+                tokens.extend([tokenizer.pad_token_id] *  gap)
+            slot_value.append(tokens)
+        slot_values.append(torch.LongTensor(slot_value))
+    return torch.LongTensor(slot_types), slot_values

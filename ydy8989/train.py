@@ -17,12 +17,14 @@ from inference import inference
 from model import TRADE, masked_cross_entropy_for_value
 from preprocessor import TRADEPreprocessor
 
+from torch.utils.tensorboard import SummaryWriter
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, default="data/train_dataset")
+    parser.add_argument("--data_dir", type=str, default="/opt/ml/input/data/train_dataset")
     parser.add_argument("--model_dir", type=str, default="results")
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
@@ -52,9 +54,9 @@ if __name__ == "__main__":
                         help="만약 지정되면 기존의 hidden_size는 embedding dimension으로 취급되고, proj_dim이 GRU의 hidden_size로 사용됨. hidden_size보다 작아야 함.", default=None)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     args = parser.parse_args()
-    
-    args.data_dir = os.environ['SM_CHANNEL_TRAIN']
-    args.model_dir = os.environ['SM_MODEL_DIR']
+
+    # args.data_dir = os.environ['SM_CHANNEL_TRAIN']
+    # args.model_dir = os.environ['SM_MODEL_DIR']
 
     # random seed 고정
     set_seed(args.random_seed)
@@ -142,11 +144,12 @@ if __name__ == "__main__":
         indent=2,
         ensure_ascii=False,
     )
-    
+    # logger = SummaryWriter(log_dir=args.model_dir)
     best_score, best_checkpoint = 0, 0
     for epoch in range(n_epochs):
         model.train()
         for step, batch in enumerate(train_loader):
+            print('---------진입 ----------')
             input_ids, segment_ids, input_masks, gating_ids, target_ids, guids = [
                 b.to(device) if not isinstance(b, list) else b for b in batch
             ]
@@ -179,15 +182,22 @@ if __name__ == "__main__":
             loss = loss_1 + loss_2
 
             loss.backward()
+            print(loss.item())
+
+
+            Exception('error print')
             nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
 
-            if step % 100 == 0:
+            if step % 10 == 0:
                 print(
                     f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}"
                 )
+                # logger.add_scalar("Train/loss", train_loss, epoch * len(train_loader) + idx)
+                # logger.add_scalar("Train/accuracy", train_acc, epoch * len(train_loader) + idx)
+                # logger.add_scalar("Train/lr", current_lr, epoch * len(train_loader) + idx)
 
         predictions = inference(model, dev_loader, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
