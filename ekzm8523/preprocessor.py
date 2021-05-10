@@ -42,10 +42,10 @@ class TRADEPreprocessor(DSTPreprocessor):
         dialogue_context = " [SEP] ".join(example.context_turns + example.current_turn) # [SEP] @@ [SEP] @@ [SEP] ...
 
         input_id = self.src_tokenizer.encode(dialogue_context, add_special_tokens=False) # 지금까지 모든 대화 전부 encode한게 input id
-#         max_length = self.max_seq_length - 2
-#         if len(input_id) > max_length:
-#             gap = len(input_id) - max_length
-#             input_id = input_id[gap:]
+        max_length = self.max_seq_length - 2
+        if len(input_id) > max_length:
+            gap = len(input_id) - max_length
+            input_id = input_id[gap:]
 
         input_id = (
             [self.src_tokenizer.cls_token_id]
@@ -88,6 +88,7 @@ class TRADEPreprocessor(DSTPreprocessor):
                 recovered.append("%s-%s" % (slot, "dontcare"))
                 continue
 
+            # generation 된 결과를 사용 (ptr)
             token_id_list = []
             for id_ in value:
                 if id_ in self.trg_tokenizer.all_special_ids:
@@ -178,11 +179,11 @@ class SUMBTPreprocessor(DSTPreprocessor):
                     label_idx = self.ontology[slot_type].index(value)
                 else:
                     label_idx = self.ontology[slot_type].index("none")
-                label.append(label_idx)
-            labels.append(label)
+                label.append(label_idx) # 45
+            labels.append(label) # turn length, 45
         num_turn = len(turns)
-        if len(turns) < self.max_turn_length:
-            gap = self.max_turn_length - len(turns)
+        if num_turn < self.max_turn_length:
+            gap = self.max_turn_length - num_turn
             for _ in range(gap):
                 dummy_turn = [self.src_tokenizer.pad_token_id] * self.max_seq_length
                 turns.append(dummy_turn)

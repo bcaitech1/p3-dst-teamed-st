@@ -2,6 +2,8 @@ import argparse
 import json
 import os
 import random
+import wandb
+import pickle
 
 import torch
 import torch.nn as nn
@@ -17,13 +19,15 @@ from inference import inference_trade, inference_sumbt
 from model import TRADE, masked_cross_entropy_for_value, SUMBT
 from preprocessor import TRADEPreprocessor, SUMBTPreprocessor
 
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
 
 def train(args):
     # random seed 고정
     set_seed(args.random_seed)
+
+    wandb.init(project='pstage3', entity='ekzm8523')
+    wandb.config.update(args)
 
     # Data Loading
     # list안에 7000개의 dict
@@ -34,12 +38,12 @@ def train(args):
     train_data, dev_data, dev_labels = load_dataset(train_data_file) # item별로 분류 6301개 , 699개
     
     # list안에 dialogue별로 세분화, dict type -> DSTInputExample type , dev는 label이 none
-    train_examples = get_examples_from_dialogues( # item의 dialogue별로 46170개, 5075개
-        train_data, user_first=False, dialogue_level=False
-    )
-    dev_examples = get_examples_from_dialogues(
-        dev_data, user_first=False, dialogue_level=False
-    )
+    # train_examples = get_examples_from_dialogues( # item의 dialogue별로 46170개, 5075개
+    #     train_data, user_first=False, dialogue_level=False
+    # )
+    # dev_examples = get_examples_from_dialogues(
+    #     dev_data, user_first=False, dialogue_level=False
+    # )
 
     # Define Preprocessor
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
@@ -50,21 +54,30 @@ def train(args):
     # Extracting Featrues
     
     # OpenVocabDSTFeature [guid, input_id, segment_id, gating_id, target_ids]
-    train_features = processor.convert_examples_to_features(train_examples)
-    dev_features = processor.convert_examples_to_features(dev_examples)
-    
+    # train_features = processor.convert_examples_to_features(train_examples)
+    # dev_features = processor.convert_examples_to_features(dev_examples)
+
+    with open('trade_data/train_features.bin', 'rb') as f:
+        train_features = pickle.load(f)
+    with open('trade_data/dev_features.bin', 'rb') as f:
+        dev_features = pickle.load(f)
+
     # Slot Meta tokenizing for the decoder initial inputs
     tokenized_slot_meta = []
     for slot in slot_meta:
         tokenized_slot_meta.append(
             tokenizer.encode(slot.replace("-", " "), add_special_tokens=False)
         )
-    
+
+
+
+
     # Model 선언
     model = TRADE(args, tokenized_slot_meta)
     model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
     print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
     model.to(device)
+    wandb.watch(model)
     print("Model is initialized")
 
     train_data = WOSDataset(train_features) # feature와 len만 담긴 dataset
@@ -142,7 +155,7 @@ def train(args):
             # generation loss
             loss_1 = loss_fnc_1(
                 all_point_outputs.contiguous(),
-                target_ids.contiguous().view(-1),
+                target_ids.contiguous().view(-1), # flatten
                 tokenizer.pad_token_id,
             )
             
@@ -162,13 +175,22 @@ def train(args):
             if step % 100 == 0:
                 print(
                     f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}"
+
                 )
 
         predictions = inference_trade(model, dev_loader, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
         for k, v in eval_result.items():
             print(f"{k}: {v}")
-
+        wandb.log({
+            "EPOCHS": epoch,
+            "loss": loss.item(),
+            "gen_loss": loss_1.item(),
+            "gate_loss": loss_2.item(),
+            "joint_acc": eval_result['joint_goal_accuracy'],
+            "turn_slot_acc": eval_result['turn_slot_accuracy'],
+            "turn_slot_f1": eval_result['turn_slot_f1'],
+        })
         if best_score < eval_result['joint_goal_accuracy']:
             print("Update Best checkpoint!")
             best_score = eval_result['joint_goal_accuracy']

@@ -10,6 +10,7 @@ from transformers import BertTokenizer
 from data_utils import (WOSDataset, get_examples_from_dialogues, tokenize_ontology)
 from model import TRADE, SUMBT
 from preprocessor import TRADEPreprocessor, SUMBTPreprocessor
+from torch.cuda.amp import autocast,  GradScaler
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -22,18 +23,20 @@ def postprocess_state(state):
     return state
 
 
-def inference_sumbt(model, eval_loader, processor, device):
+def inference_sumbt(model, eval_loader, processor, device, use_amp):
     model.eval()
     predictions = {}
     for batch in tqdm(eval_loader):
         input_ids, segment_ids, input_masks, target_ids, num_turns, guids = \
             [b.to(device) if not isinstance(b, list) else b for b in batch]
-        
-        with torch.no_grad():
-            _, pred_slot = model(
-                input_ids, segment_ids, input_masks, labels=None, n_gpu=1
-            )
-        
+
+        if use_amp:
+            with torch.no_grad():
+                with autocast(enabled=use_amp):
+                    output, pred_slot = model(input_ids, segment_ids, input_masks, labels=None, n_gpu=1)
+        else:
+            with torch.no_grad():
+                output, pred_slot = model(input_ids, segment_ids, input_masks, labels=None, n_gpu=1)
         batch_size = input_ids.size(0)
         for i in range(batch_size):
             guid = guids[i]
