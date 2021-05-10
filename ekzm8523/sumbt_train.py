@@ -160,7 +160,7 @@ def train(args):
 			batch_loss.append(loss.item())
 
 			# Backward
-			if args.use_amp:
+			if not args.use_amp:
 				loss.backward()
 				nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 				optimizer.step()
