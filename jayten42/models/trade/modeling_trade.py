@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import ElectraModel, AutoConfig
+from transformers import AutoModel, AutoConfig
 
 
 def masked_cross_entropy_for_value(logits, target, pad_idx=0):
@@ -42,7 +42,7 @@ class TRADE(nn.Module):
         self.tie_weight()
 
     def set_subword_embedding(self, model_name_or_path):
-        model = ElectraModel.from_pretrained(model_name_or_path)
+        model = AutoModel.from_pretrained(model_name_or_path)
         self.encoder.embed.weight = model.embeddings.word_embeddings.weight
         self.tie_weight()
 
@@ -111,7 +111,7 @@ class BERTEncoder(nn.Module):
 
     def __init__(self, config):
         super(BERTEncoder, self).__init__()
-        self.bert = ElectraModel.from_pretrained(config.model_name_or_path)
+        self.bert = AutoModel.from_pretrained(config.model_name_or_path)
         self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
@@ -211,12 +211,14 @@ class SlotGenerator(nn.Module):
         # J, slot_meta : key : [domain, slot] ex> LongTensor([1,2])
         # J,2
         batch_size = encoder_output.size(0)
-        slot = torch.LongTensor(self.slot_embed_idx).to(input_ids.device)  ##
+        slot = torch.tensor(
+            self.slot_embed_idx, device=input_ids.device, dtype=torch.int64
+        )  ##
         slot_e = torch.sum(self.embedding(slot), 1)  # J,d
         J = slot_e.size(0)
 
-        all_point_outputs = torch.zeros(batch_size, J, max_len, self.vocab_size).to(
-            input_ids.device
+        all_point_outputs = torch.zeros(
+            batch_size, J, max_len, self.vocab_size, device=input_ids.device
         )
 
         # Parallel Decoding
@@ -252,7 +254,7 @@ class SlotGenerator(nn.Module):
             )  # B,1
             p_gen = p_gen.squeeze(-1)
 
-            p_context_ptr = torch.zeros_like(attn_vocab).to(input_ids.device)
+            p_context_ptr = torch.zeros_like(attn_vocab, device=input_ids.device)
             p_context_ptr.scatter_add_(1, input_ids, attn_history)  # copy B,V
             p_final = p_gen * attn_vocab + (1 - p_gen) * p_context_ptr  # B,V
             _, w_idx = p_final.max(-1)
@@ -260,7 +262,7 @@ class SlotGenerator(nn.Module):
             if teacher is not None:
                 w = (
                     self.embedding(teacher[:, :, k])
-                    .transpose(0, 1)
+                    # .transpose(0, 1)
                     .reshape(batch_size * J, 1, -1)
                 )
             else:

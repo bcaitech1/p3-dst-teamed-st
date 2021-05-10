@@ -3,6 +3,10 @@ import json
 import os
 import random
 import pickle
+import glob
+from pathlib import Path
+import re
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -12,9 +16,9 @@ from transformers import AdamW, BertTokenizer, get_linear_schedule_with_warmup
 from data_utils import WOSDataset, get_examples_from_dialogues, load_dataset, set_seed
 from eval_utils import DSTEvaluator
 from evaluation import _evaluation
-from inference import inference
-from models import TRADE, TRADEBERT, masked_cross_entropy_for_value
-from preprocessor import TRADEPreprocessor
+from inference_somdst import inference
+from models import SOMDST, masked_cross_entropy_for_value
+from preprocessor import SOMDSTPreprocessor
 
 import torch.cuda.amp as amp
 import wandb
@@ -22,11 +26,29 @@ import wandb
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def increment_path(path, exist_ok=False):
+    """Automatically increment path, i.e. runs/exp --> runs/exp0, runs/exp1 etc.
+
+    Args:
+        path (str or pathlib.Path): f"{model_dir}/{args.name}".
+        exist_ok (bool): whether increment path (increment if False).
+    """
+    path = Path(path)
+    if (path.exists() and exist_ok) or (not path.exists()):
+        return str(path)
+    else:
+        dirs = glob.glob(f"{path}*")
+        matches = [re.search(rf"%s(\d+)" % path.stem, d) for d in dirs]
+        i = [int(m.groups()[0]) for m in matches if m]
+        n = max(i) + 1 if i else 2
+        return f"{path}{n}"
+
+
 if __name__ == "__main__":
     wandb.init(project="Stage2-DST")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_name", type=str, default="TRADE")
+    parser.add_argument("--run_name", type=str, default="SOMDST")
 
     parser.add_argument(
         "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
@@ -39,8 +61,6 @@ if __name__ == "__main__":
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     parser.add_argument("--num_train_epochs", type=int, default=30)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
-    parser.add_argument("--word_drop", type=float, default=0.1)
-
     parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--max_seq_length", type=int, default=512)
     parser.add_argument(
@@ -69,7 +89,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # args.data_dir = os.environ["SM_CHANNEL_TRAIN"]
-    args.model_dir = os.path.join(args.model_dir, args.run_name)
+    args.model_dir = increment_path(os.path.join(args.model_dir, args.run_name))
 
     wandb.config.update(args)
     wandb.run.name = f"{args.run_name}-{wandb.run.id}"
@@ -80,15 +100,15 @@ if __name__ == "__main__":
     # Data Loading
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    # Define Preprocessor
-    processor = TRADEPreprocessor(
-        slot_meta,
-        tokenizer,
-        max_seq_length=args.max_seq_length,
-        word_drop=args.word_drop,
+    added_token_num = tokenizer.add_special_tokens(
+        {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
     )
-    args.vocab_size = len(tokenizer)
-    args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
+    # Define Preprocessor
+    processor = SOMDSTPreprocessor(
+        slot_meta, tokenizer, max_seq_length=args.max_seq_length
+    )
+    args.vocab_size = tokenizer.vocab_size + added_token_num
+    # args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
     train_data_file = f"{args.data_dir}/train_dials.json"
     train_data, dev_data, dev_labels = load_dataset(train_data_file)
     train_examples = get_examples_from_dialogues(
@@ -97,32 +117,29 @@ if __name__ == "__main__":
     dev_examples = get_examples_from_dialogues(
         dev_data, user_first=False, dialogue_level=False
     )
-    if not os.path.exists(os.path.join(args.data_dir, "train_trade_features.pkl")):
+    if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features.pkl")):
         print("Cached Input Features not Found.\nLoad data and save.")
 
         # Extracting Featrues
         train_features = processor.convert_examples_to_features(train_examples)
-        dev_features = processor.convert_examples_to_features(dev_examples)
         print("Save Data")
-        with open(os.path.join(args.data_dir, "train_trade_features.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features.pkl"), "wb") as f:
             pickle.dump(train_features, f)
-        with open(os.path.join(args.data_dir, "dev_trade_features.pkl"), "wb") as f:
-            pickle.dump(dev_features, f)
+        with open(os.path.join(args.data_dir, "dev_somdst_examples.pkl"), "wb") as f:
+            pickle.dump(dev_examples, f)
+        with open(os.path.join(args.data_dir, "dev_somdst_labels.pkl"), "wb") as f:
+            pickle.dump(dev_labels, f)
     else:
         print("Cached Input Features Found.\nLoad data from Cached")
-        with open(os.path.join(args.data_dir, "train_trade_features.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features.pkl"), "rb") as f:
             train_features = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_trade_features.pkl"), "rb") as f:
-            dev_features = pickle.load(f)
-    # Slot Meta tokenizing for the decoder initial inputs
-    tokenized_slot_meta = []
-    for slot in slot_meta:
-        tokenized_slot_meta.append(
-            tokenizer.encode(slot.replace("-", " "), add_special_tokens=False)
-        )
+        with open(os.path.join(args.data_dir, "dev_somdst_examples.pkl"), "rb") as f:
+            dev_examples = pickle.load(f)
+        with open(os.path.join(args.data_dir, "dev_somdst_labels.pkl"), "rb") as f:
+            dev_labels = pickle.load(f)
 
     # Model 선언
-    model = TRADEBERT(args, tokenized_slot_meta)
+    model = SOMDST(args, 5, 4, processor.op2id["update"])
     # model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
     wandb.watch(model)
     # print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
@@ -140,16 +157,7 @@ if __name__ == "__main__":
     )
     print("# train:", len(train_data))
 
-    dev_data = WOSDataset(dev_features)
-    dev_sampler = SequentialSampler(dev_data)
-    dev_loader = DataLoader(
-        dev_data,
-        batch_size=args.eval_batch_size,
-        sampler=dev_sampler,
-        collate_fn=processor.collate_fn,
-        num_workers=4,
-    )
-    print("# dev:", len(dev_data))
+    print("# dev:", len(dev_examples))
 
     # Optimizer 및 Scheduler 선언
     n_epochs = args.num_train_epochs
@@ -184,9 +192,24 @@ if __name__ == "__main__":
 
         model.train()
         for step, batch in enumerate(tqdm(train_loader)):
-            input_ids, segment_ids, input_masks, gating_ids, target_ids, guids = [
-                b.to(device) if not isinstance(b, list) else b for b in batch
+            batch = [
+                b.to(device)
+                if not isinstance(b, int) and not isinstance(b, list)
+                else b
+                for b in batch
             ]
+            (
+                input_ids,
+                input_masks,
+                segment_ids,
+                slot_position_ids,
+                gating_ids,
+                domain_ids,
+                target_ids,
+                max_update,
+                max_value,
+                guids,
+            ) = batch
 
             # teacher forcing
             if (
@@ -198,47 +221,52 @@ if __name__ == "__main__":
                 tf = None
             with amp.autocast():
 
-                all_point_outputs, all_gate_outputs = model(
+                domain_scores, state_scores, gen_scores = model(
                     input_ids=input_ids,
                     token_type_ids=segment_ids,
+                    slot_positions=slot_position_ids,
                     attention_mask=input_masks,
-                    max_len=target_ids.size(-1),
+                    max_value=max_value,
+                    op_ids=gating_ids,
+                    max_update=max_update,
                     teacher=tf,
                 )
 
                 # generation loss
                 loss_1 = loss_fnc_1(
-                    all_point_outputs.contiguous(),
-                    target_ids.contiguous().view(-1),
+                    gen_scores.contiguous(),
+                    target_ids.contiguous(),
                     tokenizer.pad_token_id,
                 )
 
                 # gating loss
                 loss_2 = loss_fnc_2(
-                    all_gate_outputs.contiguous().view(-1, args.n_gate),
+                    state_scores.contiguous().view(-1, 4),
                     gating_ids.contiguous().view(-1),
                 )
-                loss = loss_1 + loss_2
+                loss_3 = loss_fnc_2(domain_scores.view(-1, 5), domain_ids.view(-1))
+                loss = loss_1 + loss_2 + loss_3
 
                 loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
+            nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
 
             if step % 100 == 0:
                 print(
-                    f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}"
+                    f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}, domain: {loss_3.item()}"
                 )
                 wandb.log(
                     {
                         "loss": loss.item(),
                         "gen loss": loss_1.item(),
                         "gate loss": loss_2.item(),
+                        "domain loss": loss_3.item(),
                     }
                 )
 
-        predictions = inference(model, dev_loader, processor, device)
+        predictions = inference(model, dev_examples, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
         for k, v in eval_result.items():
             print(f"{k}: {v}")
