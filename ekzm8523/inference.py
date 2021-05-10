@@ -14,7 +14,7 @@ from torch.cuda.amp import autocast,  GradScaler
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+use_amp = False
 
 def postprocess_state(state):
     for i, s in enumerate(state):
@@ -23,7 +23,7 @@ def postprocess_state(state):
     return state
 
 
-def inference_sumbt(model, eval_loader, processor, device, use_amp):
+def inference_sumbt(model, eval_loader, processor, device):
     model.eval()
     predictions = {}
     for batch in tqdm(eval_loader):
@@ -53,9 +53,13 @@ def inference_trade(model, eval_loader, processor, device):
             b.to(device) if not isinstance(b, list) else b for b in batch
         ]
 
-        with torch.no_grad():
-            o, g = model(input_ids, segment_ids, input_masks, 9)
 
+        with torch.no_grad():
+            if use_amp:
+                with autocast(enabled=use_amp):
+                    o, g = model(input_ids, segment_ids, input_masks, 9)
+            else:
+                o, g = model(input_ids, segment_ids, input_masks, 9)
             _, generated_ids = o.max(-1)
             _, gated_ids = g.max(-1)
 
@@ -84,7 +88,6 @@ if __name__ == "__main__":
     slot_meta = json.load(open(f"{model_dir_path}/slot_meta.json", "r"))
     
     config.model = args.model # 나중에 지울 것
-    
     tokenizer = BertTokenizer.from_pretrained(config.model_name_or_path)
     
     print(config)
@@ -126,7 +129,7 @@ if __name__ == "__main__":
                 tokenizer.encode(slot.replace("-", " "), add_special_tokens=False)
             )
     
-        model = TRADE(config, tokenized_slot_meta)
+        model = TRADE(config, tokenized_slot_meta, slot_meta)
         ckpt = torch.load(model_path, map_location="cpu")
         model.load_state_dict(ckpt)
         model.to(device)

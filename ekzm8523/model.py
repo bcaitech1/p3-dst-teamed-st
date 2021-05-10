@@ -9,7 +9,7 @@ from transformers import BertModel, BertPreTrainedModel
 
 
 def masked_cross_entropy_for_value(logits, target, pad_idx=0):
-    mask = target.ne(pad_idx)
+    mask = target.ne(pad_idx)   # B * J * value_max_len
     logits_flat = logits.view(-1, logits.size(-1))
     log_probs_flat = torch.log(logits_flat)
     target_flat = target.view(-1, 1)
@@ -21,41 +21,35 @@ def masked_cross_entropy_for_value(logits, target, pad_idx=0):
 
 
 class TRADE(nn.Module):
-    def __init__(self, config, tokenized_slot_meta, pad_idx=0):
+    def __init__(self, config, slot_vocab, slot_meta, pad_idx=0):
         super(TRADE, self).__init__()
-        self.encoder = GRUEncoder(
-            config.vocab_size,
-            config.hidden_size,
-            1,
-            config.hidden_dropout_prob,
-            config.proj_dim,
-            pad_idx,
-        )
+        self.slot_meta = slot_meta
+        if config.model_name_or_path:
+            self.encoder = BertModel.from_pretrained(config.model_name_or_path)
+        else:
+            self.encoder = BertModel(config)
 
         self.decoder = SlotGenerator(
             config.vocab_size,
             config.hidden_size,
             config.hidden_dropout_prob,
             config.n_gate,
-            config.proj_dim,
+            None,
             pad_idx,
         )
 
-        self.decoder.set_slot_idx(tokenized_slot_meta)
+        # init for only subword embedding
+        self.decoder.set_slot_idx(slot_vocab)
         self.tie_weight()
-        
-    def set_subword_embedding(self, model_name_or_path):
-        model = ElectraModel.from_pretrained(model_name_or_path)
-        self.encoder.embed.weight = model.embeddings.word_embeddings.weight
-        self.tie_weight()
+
 
     def tie_weight(self):
         """
         decoder embed weight랑 encoder embed weight를 일치시켜주는 함수
         """
-        self.decoder.embed.weight = self.encoder.embed.weight
-        if self.decoder.proj_layer:
-            self.decoder.proj_layer.weight = self.encoder.proj_layer.weight
+        self.decoder.embed.weight = self.encoder.embeddings.word_embeddings.weight
+        # if self.decoder.proj_layer:
+        #     self.decoder.proj_layer.weight = self.encoder.proj_layer.weight
 
     def forward(
         self, input_ids, token_type_ids, attention_mask=None, max_len=10, teacher=None
@@ -128,7 +122,7 @@ class SlotGenerator(nn.Module):
         self.gru = nn.GRU(  # pointer Generator
             self.hidden_size, self.hidden_size, 1, dropout=dropout, batch_first=True
         )
-        self.n_gate = n_gate
+        self.n_gate = n_gate # none, doncare, ptr
         self.dropout = nn.Dropout(dropout)
         self.w_gen = nn.Linear(self.hidden_size * 3, 1)
         self.sigmoid = nn.Sigmoid()
@@ -157,27 +151,28 @@ class SlotGenerator(nn.Module):
         # J, slot_meta : key : [domain, slot] ex> LongTensor([1,2])
         # J,2
         batch_size = encoder_output.size(0)
-        slot = torch.LongTensor(self.slot_embed_idx).to(input_ids.device)  # 45, 4
-        slot_e = torch.sum(self.embedding(slot), 1)  # J , emb_size 768
+        # slot = torch.LongTensor(self.slot_embed_idx).to(input_ids.device)  # 45, 4
+        slot = torch.tensor(self.slot_embed_idx, device=input_ids.device)
+        slot_e = torch.sum(self.embedding(slot), 1)  # J, 4, 768 -> J , 768
         J = slot_e.size(0)
 
-        all_point_outputs = torch.zeros(batch_size, J, max_len, self.vocab_size).to(
-            input_ids.device
-        )   # (BS, J, max_len, vocab_size(35000))
+        all_point_outputs = torch.zeros(batch_size, J, max_len, self.vocab_size, device=input_ids.device)
         
         # Parallel Decoding
         w = slot_e.repeat(batch_size, 1).unsqueeze(1)   # (BS * J, 1, embed_size)
-        hidden = hidden.repeat_interleave(J, dim=1) # (1, BS * J, embed_size)
-        encoder_output = encoder_output.repeat_interleave(J, dim=0) # (BS * J, vocab, embed)
-        input_ids = input_ids.repeat_interleave(J, dim=0) # (BS * J, vocab)
-        input_masks = input_masks.repeat_interleave(J, dim=0) # (BS * J, vocab)
-        for k in range(max_len):
+        hidden = hidden.repeat_interleave(J, dim=1) # (1, BS, embed_size) -> (1, BS * J, embed_size)
+        encoder_output = encoder_output.repeat_interleave(J, dim=0) # (BS, vocab, embed) -> (BS * J, vocab, embed)
+        input_ids = input_ids.repeat_interleave(J, dim=0) # (BS, vocab) -> (BS * J, vocab)
+        input_masks = input_masks.repeat_interleave(J, dim=0) # (BS, vocab) -> (BS * J, vocab)
+        # input_masks = input_masks.to(dtype=hidden.dtype)
+        # input_masks = input_masks * -10000.0
+        for k in range(max_len):    # B = BS * J, D = embed
             w = self.dropout(w)
             _, hidden = self.gru(w, hidden)  # 1,B,D
 
             # B,T,D * B,D,1 => B,T
             attn_e = torch.bmm(encoder_output, hidden.permute(1, 2, 0))  # B,T,1
-            attn_e = attn_e.squeeze(-1).masked_fill(input_masks, -1e9)
+            attn_e = attn_e.squeeze(-1).masked_fill(input_masks, -1e4)
             attn_history = F.softmax(attn_e, -1)  # B,T
 
             if self.proj_layer:
@@ -189,22 +184,22 @@ class SlotGenerator(nn.Module):
             attn_v = torch.matmul(
                 hidden_proj.squeeze(0), self.embed.weight.transpose(0, 1)
             )  # B,V
-            attn_vocab = F.softmax(attn_v, -1)
+            attn_vocab = F.softmax(attn_v, -1) # p_vocab / 어떤 vocab을 예측할건지
 
             # B,1,T * B,T,D => B,1,D
             context = torch.bmm(attn_history.unsqueeze(1), encoder_output)  # B,1,D
             p_gen = self.sigmoid(
-                self.w_gen(torch.cat([w, hidden.transpose(0, 1), context], -1))
+                self.w_gen(torch.cat([w, hidden.transpose(0, 1), context], -1)) # B , 1, 3 * D를 w_gen에 넣어줌
             )  # B,1
             p_gen = p_gen.squeeze(-1) # 720, 1 -> 720
 
-            p_context_ptr = torch.zeros_like(attn_vocab).to(input_ids.device)
+            p_context_ptr = torch.zeros_like(attn_vocab, device=input_ids.device)
             p_context_ptr.scatter_add_(1, input_ids, attn_history)  # copy B,V
             p_final = p_gen * attn_vocab + (1 - p_gen) * p_context_ptr  # B,V
             _, w_idx = p_final.max(-1)
 
             if teacher is not None:
-                w = self.embedding(teacher[:, :, k]).transpose(0, 1).reshape(batch_size * J, 1, -1)
+                w = self.embedding(teacher[:, :, k]).reshape(batch_size * J, 1, -1)
             else:
                 w = self.embedding(w_idx).unsqueeze(1)  # B,1,D
             if k == 0:
@@ -262,7 +257,7 @@ class MultiHeadAttention(nn.Module):
             mask = (1.0 - mask) * -10000.0
             scores = scores + mask
 
-            # scores = scores.masked_fill(mask == 0, -1e9)
+            # scores = scores.masked_fill(mask == 0, -1e4)
         scores = F.softmax(scores, dim=-1) # 3060, 4, 1, 64
 
         if dropout is not None:
@@ -370,9 +365,8 @@ class SUMBT(nn.Module):
         self.sv_encoder.eval()
 
         # Slot encoding
-        slot_type_ids = torch.zeros(slot_ids.size(), dtype=torch.long).to(
-            slot_ids.device
-        )
+        slot_type_ids = torch.zeros(slot_ids.size(), dtype=torch.long, device=slot_ids.device)
+
         slot_mask = slot_ids > 0
         hid_slot, _ = self.sv_encoder(
             slot_ids.view(-1, self.max_label_length),
@@ -384,9 +378,7 @@ class SUMBT(nn.Module):
         self.slot_lookup = nn.Embedding.from_pretrained(hid_slot, freeze=True)
 
         for s, label_id in enumerate(label_ids):
-            label_type_ids = torch.zeros(label_id.size(), dtype=torch.long).to(
-                label_id.device
-            )
+            label_type_ids = torch.zeros(label_id.size(), dtype=torch.long, device=label_id.device)
             label_mask = label_id > 0
             hid_label, _ = self.sv_encoder(
                 label_id.view(-1, self.max_label_length),
@@ -454,11 +446,7 @@ class SUMBT(nn.Module):
 
         # NBT
         if self.zero_init_rnn:
-            h = torch.zeros(
-                self.rnn_num_layers, input_ids.shape[0] * slot_dim, self.hidden_dim
-            ).to(
-                self.device
-            )  # [1, slot_dim*ds, hidden]
+            h = torch.zeros(self.rnn_num_layers, input_ids.shape[0] * slot_dim, self.hidden_dim, device=self.device)
         else:
             h = hidden[:, 0, :].unsqueeze(0).repeat(self.rnn_num_layers, 1, 1) # 1, 360, 768
             h = self.rnn_init_linear(h) # 1, 360, 300
@@ -466,11 +454,7 @@ class SUMBT(nn.Module):
         if isinstance(self.nbt, nn.GRU):
             rnn_out, _ = self.nbt(hidden, h)  # [J*B, M, H_GRU]
         elif isinstance(self.nbt, nn.LSTM):
-            c = torch.zeros(
-                self.rnn_num_layers, input_ids.shape[0] * slot_dim, self.hidden_dim
-            ).to(
-                self.device
-            )  # [1, slot_dim*ds, hidden]
+            c = torch.zeros(self.rnn_num_layers, input_ids.shape[0] * slot_dim, self.hidden_dim, device=self.device)
             rnn_out, _ = self.nbt(hidden, (h, c))  # [slot_dim*ds, turn, hidden]
         rnn_out = self.layer_norm(self.linear(self.dropout(rnn_out))) # [360, 34, 768]
 

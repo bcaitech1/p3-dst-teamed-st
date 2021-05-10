@@ -90,6 +90,11 @@ def set_seed(seed):
     torch.manual_seed(seed)
     if torch.cuda.device_count() > 0:
         torch.cuda.manual_seed_all(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if use multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 
 
 def split_slot(dom_slot_value, get_domain_slot=False):

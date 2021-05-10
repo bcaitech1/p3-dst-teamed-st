@@ -16,7 +16,7 @@ class TRADEPreprocessor(DSTPreprocessor):
         self.src_tokenizer = src_tokenizer
         self.trg_tokenizer = trg_tokenizer if trg_tokenizer else src_tokenizer
         self.ontology = ontology
-        self.gating2id = {"none": 0, "dontcare": 1, "ptr": 2}
+        self.gating2id = {"none": 0, "dontcare": 1, "yes": 2, "no": 3, "ptr": 4}
         self.id2gating = {v: k for k, v in self.gating2id.items()}
         self.max_seq_length = max_seq_length
 
@@ -39,18 +39,22 @@ class TRADEPreprocessor(DSTPreprocessor):
                     target_ids: Optional[Union[List[int], List[List[int]]]]
                 ]
         """
-        dialogue_context = " [SEP] ".join(example.context_turns + example.current_turn) # [SEP] @@ [SEP] @@ [SEP] ...
+        if example.current_turn[0] == '':
+            example.current_turn = example.current_turn[1:]
+        if example.context_turns and example.context_turns[0] == '':
+            example.context_turns = example.context_turns[1:]
+        dialogue_context = " [SEP] ".join(example.context_turns + example.current_turn)
 
-        input_id = self.src_tokenizer.encode(dialogue_context, add_special_tokens=False) # 지금까지 모든 대화 전부 encode한게 input id
+        input_id = self.src_tokenizer.encode(dialogue_context, add_special_tokens=False)
         max_length = self.max_seq_length - 2
         if len(input_id) > max_length:
             gap = len(input_id) - max_length
             input_id = input_id[gap:]
 
         input_id = (
-            [self.src_tokenizer.cls_token_id]
-            + input_id
-            + [self.src_tokenizer.sep_token_id]
+                [self.src_tokenizer.cls_token_id]
+                + input_id
+                + [self.src_tokenizer.sep_token_id]
         )
         segment_id = [0] * len(input_id)
 
@@ -59,9 +63,9 @@ class TRADEPreprocessor(DSTPreprocessor):
         if not example.label:
             example.label = []
 
-        state = convert_state_dict(example.label) # dic{"domain_slot" : "value"}
-        for slot in self.slot_meta: # slot을 하나씩 돌며 state에 slot이 있으
-            value = state.get(slot, "none") # 1개도 없을경우 none 반환
+        state = convert_state_dict(example.label)
+        for slot in self.slot_meta:
+            value = state.get(slot, "none")
             target_id = self.trg_tokenizer.encode(value, add_special_tokens=False) + [
                 self.trg_tokenizer.sep_token_id
             ]
@@ -84,11 +88,10 @@ class TRADEPreprocessor(DSTPreprocessor):
             if self.id2gating[gate] == "none":
                 continue
 
-            if self.id2gating[gate] == "dontcare":
-                recovered.append("%s-%s" % (slot, "dontcare"))
+            if self.id2gating[gate] in ["dontcare", "yes", "no"]:
+                recovered.append("%s-%s" % (slot, self.id2gating[gate]))
                 continue
 
-            # generation 된 결과를 사용 (ptr)
             token_id_list = []
             for id_ in value:
                 if id_ in self.trg_tokenizer.all_special_ids:
