@@ -74,15 +74,20 @@ def inference(model, eval_examples, processor, device):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, default=None)
-    parser.add_argument("--model_dir", type=str, default=None)
-    parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument(
+        "--data_dir", type=str, default="/opt/ml/input/data/eval_dataset"
+    )
+    parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
+    parser.add_argument("--output_dir", type=str, default="/opt/ml/predictions")
     parser.add_argument("--eval_batch_size", type=int, default=32)
-    args = parser.parse_args()
-    args.data_dir = os.environ["SM_CHANNEL_EVAL"]
-    # args.model_dir = os.environ['SM_CHANNEL_MODEL']
-    args.output_dir = os.environ["SM_OUTPUT_DATA_DIR"]
+    parser.add_argument("--model_name", type=str, default="SOMDST2/model-7.bin")
 
+    args = parser.parse_args()
+    # args.data_dir = os.environ["SM_CHANNEL_EVAL"]
+    # args.model_dir = os.environ['SM_CHANNEL_MODEL']
+    # args.output_dir = os.environ["SM_OUTPUT_DATA_DIR"]
+    args.model_dir = os.path.join(args.model_dir, args.model_name)
+    args.output_dir = os.path.join(args.output_dir, args.model_name.split("/")[0])
     model_dir_path = os.path.dirname(args.model_dir)
     eval_data = json.load(open(f"{args.data_dir}/eval_dials.json", "r"))
     config = json.load(open(f"{model_dir_path}/exp_config.json", "r"))
@@ -90,22 +95,25 @@ if __name__ == "__main__":
     slot_meta = json.load(open(f"{model_dir_path}/slot_meta.json", "r"))
 
     tokenizer = BertTokenizer.from_pretrained(config.model_name_or_path)
-    processor = SOMDSTPreprocessor(slot_meta, tokenizer)
-
+    added_token_num = tokenizer.add_special_tokens(
+        {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
+    )
+    # Define Preprocessor
+    processor = SOMDSTPreprocessor(slot_meta, tokenizer, max_seq_length=512)
     eval_examples = get_examples_from_dialogues(
         eval_data, user_first=False, dialogue_level=False
     )
 
     # Extracting Featrues
-    eval_features = processor.convert_examples_to_features(eval_examples)
-    eval_data = WOSDataset(eval_features)
-    eval_sampler = SequentialSampler(eval_data)
-    eval_loader = DataLoader(
-        eval_data,
-        batch_size=args.eval_batch_size,
-        sampler=eval_sampler,
-        collate_fn=processor.collate_fn,
-    )
+    # eval_features = processor.convert_examples_to_features(eval_examples)
+    # eval_data = WOSDataset(eval_features)
+    # eval_sampler = SequentialSampler(eval_data)
+    # eval_loader = DataLoader(
+    #     eval_data,
+    #     batch_size=args.eval_batch_size,
+    #     sampler=eval_sampler,
+    #     collate_fn=processor.collate_fn,
+    # )
     print("# eval:", len(eval_data))
 
     tokenized_slot_meta = []
@@ -121,11 +129,10 @@ if __name__ == "__main__":
     model.to(device)
     print("Model is loaded")
 
-    predictions = inference(model, eval_loader, processor, device)
+    predictions = inference(model, eval_examples, processor, device)
 
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
-
     json.dump(
         predictions,
         open(f"{args.output_dir}/predictions.csv", "w"),

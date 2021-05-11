@@ -54,10 +54,12 @@ if __name__ == "__main__":
         "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
     )
     parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
+    parser.add_argument("--model_name", type=str, default="")
+    parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--adam_epsilon", type=float, default=1e-8)
+    parser.add_argument("--adam_epsilon", type=float, default=1e-4)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     parser.add_argument("--num_train_epochs", type=int, default=30)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
@@ -89,8 +91,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # args.data_dir = os.environ["SM_CHANNEL_TRAIN"]
-    args.model_dir = increment_path(os.path.join(args.model_dir, args.run_name))
-
+    if args.model_name:
+        args.model_dir = os.path.join(args.model_dir, args.model_name)
+    else:
+        args.model_dir = increment_path(os.path.join(args.model_dir, args.run_name))
+    print(args.model_dir)
     wandb.config.update(args)
     wandb.run.name = f"{args.run_name}-{wandb.run.id}"
     wandb.run.save()
@@ -140,6 +145,12 @@ if __name__ == "__main__":
 
     # Model 선언
     model = SOMDST(args, 5, 4, processor.op2id["update"])
+
+    if args.model_name:
+        print("Checkpoint Load")
+        ckpt = torch.load(os.path.join(args.model_dir, f"model-{args.ckpt}.bin"))
+        model.load_state_dict(ckpt)
+
     # model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
     wandb.watch(model)
     # print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
@@ -255,7 +266,7 @@ if __name__ == "__main__":
 
             if step % 100 == 0:
                 print(
-                    f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}, domain: {loss_3.item()}"
+                    f"[{epoch + args.ckpt}/{n_epochs + args.ckpt}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}, domain: {loss_3.item()}"
                 )
                 wandb.log(
                     {
@@ -274,7 +285,9 @@ if __name__ == "__main__":
         if best_score < eval_result["joint_goal_accuracy"]:
             print("Update Best checkpoint!")
             best_score = eval_result["joint_goal_accuracy"]
-        best_checkpoint = epoch
+        best_checkpoint = epoch + args.ckpt
 
-        torch.save(model.state_dict(), f"{args.model_dir}/model-{epoch}.bin")
+        torch.save(
+            model.state_dict(), f"{args.model_dir}/model-{epoch + args.ckpt}.bin"
+        )
     print(f"Best checkpoint: {args.model_dir}/model-{best_checkpoint}.bin")
