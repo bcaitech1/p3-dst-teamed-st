@@ -9,7 +9,7 @@ from transformers import BertModel, BertPreTrainedModel
 
 
 def masked_cross_entropy_for_value(logits, target, pad_idx=0):
-    mask = target.ne(pad_idx)   # B * J * value_max_len
+    mask = target.ne(pad_idx)
     logits_flat = logits.view(-1, logits.size(-1))
     log_probs_flat = torch.log(logits_flat)
     target_flat = target.view(-1, 1)
@@ -18,6 +18,164 @@ def masked_cross_entropy_for_value(logits, target, pad_idx=0):
     losses = losses * mask.float()
     loss = losses.sum() / (mask.sum().float())
     return loss
+
+
+# class TRADE(nn.Module):
+#     def __init__(self, config, slot_vocab, slot_meta, pad_idx=0):
+#         super(TRADE, self).__init__()
+#         self.slot_meta = slot_meta
+#         if config.model_name_or_path:
+#             self.encoder = BertModel.from_pretrained(config.model_name_or_path)
+#         else:
+#             self.encoder = BertModel(config)
+#         self.encoder.embeddings.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=pad_idx)
+#
+#         self.decoder = SlotGenerator(
+#             config.vocab_size,
+#             config.hidden_size,
+#             config.hidden_dropout_prob,
+#             config.n_gate,
+#             None,
+#             pad_idx,
+#         )
+#
+#         # init for only subword embedding
+#         self.decoder.set_slot_idx(slot_vocab)
+#         self.tie_weight()
+#
+#
+#     def tie_weight(self):
+#         """
+#         decoder embed weight랑 encoder embed weight를 일치시켜주는 함수
+#         """
+#         self.decoder.embed.weight = self.encoder.embeddings.word_embeddings.weight
+#         # if self.decoder.proj_layer:
+#         #     self.decoder.proj_layer.weight = self.encoder.proj_layer.weight
+#
+#     def forward(
+#         self, input_ids, token_type_ids, attention_mask=None, max_len=10, teacher=None
+#     ):
+#
+#         encoder_outputs, pooled_output = self.encoder(input_ids=input_ids) # pooled_output -> gru의 마지막 hidden state
+#         all_point_outputs, all_gate_outputs = self.decoder(
+#             input_ids,
+#             encoder_outputs,    # batch, vocab_size, emb_size
+#             pooled_output.unsqueeze(0),     # 1, batch, emb_size
+#             attention_mask,     # batch, vocab_size
+#             max_len,
+#             teacher,
+#         )
+#
+#         return all_point_outputs, all_gate_outputs
+#
+#
+#
+# class SlotGenerator(nn.Module):
+#     def __init__(
+#         self, vocab_size, hidden_size, dropout, n_gate, proj_dim=None, pad_idx=0
+#     ):
+#         super(SlotGenerator, self).__init__()
+#         self.pad_idx = pad_idx
+#         self.vocab_size = vocab_size
+#         self.embed = nn.Embedding(
+#             vocab_size, hidden_size, padding_idx=pad_idx
+#         )  # shared with encoder
+#
+#         if proj_dim:
+#             self.proj_layer = nn.Linear(hidden_size, proj_dim, bias=False)
+#         else:
+#             self.proj_layer = None
+#         self.hidden_size = proj_dim if proj_dim else hidden_size
+#
+#         self.gru = nn.GRU(  # pointer Generator
+#             self.hidden_size, self.hidden_size, 1, dropout=dropout, batch_first=True
+#         )
+#         self.n_gate = n_gate # none, doncare, ptr
+#         self.dropout = nn.Dropout(dropout)
+#         self.w_gen = nn.Linear(self.hidden_size * 3, 1)
+#         self.sigmoid = nn.Sigmoid()
+#         self.w_gate = nn.Linear(self.hidden_size, n_gate) # slot Gate Classifier
+#
+#     def set_slot_idx(self, slot_vocab_idx):     # packing
+#         whole = []
+#         max_length = max(map(len, slot_vocab_idx))
+#         for idx in slot_vocab_idx:
+#             if len(idx) < max_length:
+#                 gap = max_length - len(idx)
+#                 idx.extend([self.pad_idx] * gap)
+#             whole.append(idx)
+#         self.slot_embed_idx = whole  # torch.LongTensor(whole)
+#
+#     def embedding(self, x):
+#         x = self.embed(x)
+#         if self.proj_layer:
+#             x = self.proj_layer(x)
+#         return x
+#
+#     def forward(
+#         self, input_ids, encoder_output, hidden, input_masks, max_len, teacher=None
+#     ):
+#         input_masks = input_masks.ne(1)     # not equal , (batch, vocab_size)
+#         # J, slot_meta : key : [domain, slot] ex> LongTensor([1,2])
+#         # J,2
+#         batch_size = encoder_output.size(0)
+#         # slot = torch.LongTensor(self.slot_embed_idx).to(input_ids.device)  # 45, 4
+#         slot = torch.tensor(self.slot_embed_idx, device=input_ids.device)
+#         slot_e = torch.sum(self.embedding(slot), 1)  # J, 4, 768 -> J , 768
+#         J = slot_e.size(0)
+#
+#         all_point_outputs = torch.zeros(batch_size, J, max_len, self.vocab_size, device=input_ids.device)
+#
+#         # Parallel Decoding
+#         w = slot_e.repeat(batch_size, 1).unsqueeze(1)   # (BS * J, 1, embed_size)
+#         hidden = hidden.repeat_interleave(J, dim=1) # (1, BS, embed_size) -> (1, BS * J, embed_size)
+#         encoder_output = encoder_output.repeat_interleave(J, dim=0) # (BS, vocab, embed) -> (BS * J, vocab, embed)
+#         input_ids = input_ids.repeat_interleave(J, dim=0) # (BS, vocab) -> (BS * J, vocab)
+#         input_masks = input_masks.repeat_interleave(J, dim=0) # (BS, vocab) -> (BS * J, vocab)
+#         # input_masks = input_masks.to(dtype=hidden.dtype)
+#         # input_masks = input_masks * -10000.0
+#         for k in range(max_len):    # B = BS * J, D = embed
+#             w = self.dropout(w)
+#             _, hidden = self.gru(w, hidden)  # 1,B,D
+#
+#             # B,T,D * B,D,1 => B,T
+#             attn_e = torch.bmm(encoder_output, hidden.permute(1, 2, 0))  # B,T,1
+#             attn_e = attn_e.squeeze(-1).masked_fill(input_masks, -1e4)
+#             attn_history = F.softmax(attn_e, -1)  # B,T
+#
+#             if self.proj_layer:
+#                 hidden_proj = torch.matmul(hidden, self.proj_layer.weight)
+#             else:
+#                 hidden_proj = hidden # (1, BS * J, embed_size)
+#
+#             # B,D * D,V => B,V
+#             attn_v = torch.matmul(
+#                 hidden_proj.squeeze(0), self.embed.weight.transpose(0, 1)
+#             )  # B,V
+#             attn_vocab = F.softmax(attn_v, -1) # p_vocab / 어떤 vocab을 예측할건지
+#
+#             # B,1,T * B,T,D => B,1,D
+#             context = torch.bmm(attn_history.unsqueeze(1), encoder_output)  # B,1,D
+#             p_gen = self.sigmoid(
+#                 self.w_gen(torch.cat([w, hidden.transpose(0, 1), context], -1)) # B , 1, 3 * D를 w_gen에 넣어줌
+#             )  # B,1
+#             p_gen = p_gen.squeeze(-1) # 720, 1 -> 720
+#
+#             p_context_ptr = torch.zeros_like(attn_vocab, device=input_ids.device)
+#             p_context_ptr.scatter_add_(1, input_ids, attn_history)  # copy B,V
+#             p_final = p_gen * attn_vocab + (1 - p_gen) * p_context_ptr  # B,V
+#             _, w_idx = p_final.max(-1)
+#
+#             if teacher is not None:
+#                 w = self.embedding(teacher[:, :, k]).reshape(batch_size * J, 1, -1)
+#             else:
+#                 w = self.embedding(w_idx).unsqueeze(1)  # B,1,D
+#             if k == 0:
+#                 gated_logit = self.w_gate(context.squeeze(1))  # (B,3)
+#                 all_gate_outputs = gated_logit.view(batch_size, J, self.n_gate) # (16, 45, 3)
+#             all_point_outputs[:, :, k, :] = p_final.view(batch_size, J, self.vocab_size)
+#
+#         return all_point_outputs, all_gate_outputs # (16, 45, 9, 35000) , (16, 45 ,3)
 
 
 class TRADE(nn.Module):
@@ -29,6 +187,7 @@ class TRADE(nn.Module):
         else:
             self.encoder = BertModel(config)
 
+        self.encoder.resize_token_embeddings(config.vocab_size)
         self.decoder = SlotGenerator(
             config.vocab_size,
             config.hidden_size,
@@ -42,69 +201,22 @@ class TRADE(nn.Module):
         self.decoder.set_slot_idx(slot_vocab)
         self.tie_weight()
 
-
     def tie_weight(self):
-        """
-        decoder embed weight랑 encoder embed weight를 일치시켜주는 함수
-        """
         self.decoder.embed.weight = self.encoder.embeddings.word_embeddings.weight
-        # if self.decoder.proj_layer:
-        #     self.decoder.proj_layer.weight = self.encoder.proj_layer.weight
 
-    def forward(
-        self, input_ids, token_type_ids, attention_mask=None, max_len=10, teacher=None
-    ):
+    def forward(self, input_ids, token_type_ids, attention_mask=None, max_len=10, teacher=None):
 
-        encoder_outputs, pooled_output = self.encoder(input_ids=input_ids) # pooled_output -> gru의 마지막 hidden state
+        encoder_outputs, pooled_output = self.encoder(input_ids=input_ids)
         all_point_outputs, all_gate_outputs = self.decoder(
-            input_ids,
-            encoder_outputs,    # batch, vocab_size, emb_size
-            pooled_output.unsqueeze(0),     # 1, batch, emb_size
-            attention_mask,     # batch, vocab_size
-            max_len,
-            teacher,
+            input_ids, encoder_outputs, pooled_output.unsqueeze(0), attention_mask, max_len, teacher
         )
 
         return all_point_outputs, all_gate_outputs
 
 
-class GRUEncoder(nn.Module):
-    def __init__(self, vocab_size, d_model, n_layer, dropout, proj_dim=None, pad_idx=0):
-        super(GRUEncoder, self).__init__()
-        self.pad_idx = pad_idx
-        self.embed = nn.Embedding(vocab_size, d_model, padding_idx=pad_idx)
-        if proj_dim:
-            self.proj_layer = nn.Linear(d_model, proj_dim, bias=False)
-        else:   # default
-            self.proj_layer = None
-
-        self.d_model = proj_dim if proj_dim else d_model
-        self.gru = nn.GRU(
-            self.d_model,
-            self.d_model,
-            n_layer,
-            dropout=dropout,
-            batch_first=True,
-            bidirectional=True,
-        )
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, input_ids):
-        mask = input_ids.eq(self.pad_idx).unsqueeze(-1) # (batch_size, vocab_size, 1)
-        x = self.embed(input_ids)   # (bath_size, vocab_size, embedding_size)
-        if self.proj_layer:     # default == None
-            x = self.proj_layer(x)
-        x = self.dropout(x)
-        o, h = self.gru(x)
-        o = o.masked_fill(mask, 0.0)
-        output = o[:, :, : self.d_model] + o[:, :, self.d_model :] # summation
-        hidden = h[0] + h[1]  # n_layer 고려
-        return output, hidden   # output -> (batch_size, vocab_size, embedding_size) , hidden -> (batch_size, embedding_size)
-
-
 class SlotGenerator(nn.Module):
     def __init__(
-        self, vocab_size, hidden_size, dropout, n_gate, proj_dim=None, pad_idx=0
+            self, vocab_size, hidden_size, dropout, n_gate, proj_dim=None, pad_idx=0
     ):
         super(SlotGenerator, self).__init__()
         self.pad_idx = pad_idx
@@ -119,16 +231,16 @@ class SlotGenerator(nn.Module):
             self.proj_layer = None
         self.hidden_size = proj_dim if proj_dim else hidden_size
 
-        self.gru = nn.GRU(  # pointer Generator
+        self.gru = nn.GRU(
             self.hidden_size, self.hidden_size, 1, dropout=dropout, batch_first=True
         )
-        self.n_gate = n_gate # none, doncare, ptr
+        self.n_gate = n_gate
         self.dropout = nn.Dropout(dropout)
         self.w_gen = nn.Linear(self.hidden_size * 3, 1)
         self.sigmoid = nn.Sigmoid()
-        self.w_gate = nn.Linear(self.hidden_size, n_gate) # slot Gate Classifier
+        self.w_gate = nn.Linear(self.hidden_size, n_gate)
 
-    def set_slot_idx(self, slot_vocab_idx):     # packing
+    def set_slot_idx(self, slot_vocab_idx):
         whole = []
         max_length = max(map(len, slot_vocab_idx))
         for idx in slot_vocab_idx:
@@ -145,28 +257,26 @@ class SlotGenerator(nn.Module):
         return x
 
     def forward(
-        self, input_ids, encoder_output, hidden, input_masks, max_len, teacher=None
+            self, input_ids, encoder_output, hidden, input_masks, max_len, teacher=None
     ):
-        input_masks = input_masks.ne(1)     # not equal , (batch, vocab_size)
+        input_masks = input_masks.ne(1)
         # J, slot_meta : key : [domain, slot] ex> LongTensor([1,2])
         # J,2
         batch_size = encoder_output.size(0)
-        # slot = torch.LongTensor(self.slot_embed_idx).to(input_ids.device)  # 45, 4
-        slot = torch.tensor(self.slot_embed_idx, device=input_ids.device)
-        slot_e = torch.sum(self.embedding(slot), 1)  # J, 4, 768 -> J , 768
+        # slot = torch.LongTensor(self.slot_embed_idx).to(input_ids.device)  ##
+        slot = torch.tensor(self.slot_embed_idx, device=input_ids.device, dtype=input_ids.dtype)
+        slot_e = torch.sum(self.embedding(slot), 1)  # J,d
         J = slot_e.size(0)
 
         all_point_outputs = torch.zeros(batch_size, J, max_len, self.vocab_size, device=input_ids.device)
-        
+
         # Parallel Decoding
-        w = slot_e.repeat(batch_size, 1).unsqueeze(1)   # (BS * J, 1, embed_size)
-        hidden = hidden.repeat_interleave(J, dim=1) # (1, BS, embed_size) -> (1, BS * J, embed_size)
-        encoder_output = encoder_output.repeat_interleave(J, dim=0) # (BS, vocab, embed) -> (BS * J, vocab, embed)
-        input_ids = input_ids.repeat_interleave(J, dim=0) # (BS, vocab) -> (BS * J, vocab)
-        input_masks = input_masks.repeat_interleave(J, dim=0) # (BS, vocab) -> (BS * J, vocab)
-        # input_masks = input_masks.to(dtype=hidden.dtype)
-        # input_masks = input_masks * -10000.0
-        for k in range(max_len):    # B = BS * J, D = embed
+        w = slot_e.repeat(batch_size, 1).unsqueeze(1)
+        hidden = hidden.repeat_interleave(J, dim=1)
+        encoder_output = encoder_output.repeat_interleave(J, dim=0)
+        input_ids = input_ids.repeat_interleave(J, dim=0)
+        input_masks = input_masks.repeat_interleave(J, dim=0)
+        for k in range(max_len):
             w = self.dropout(w)
             _, hidden = self.gru(w, hidden)  # 1,B,D
 
@@ -178,20 +288,20 @@ class SlotGenerator(nn.Module):
             if self.proj_layer:
                 hidden_proj = torch.matmul(hidden, self.proj_layer.weight)
             else:
-                hidden_proj = hidden # (1, BS * J, embed_size)
+                hidden_proj = hidden
 
             # B,D * D,V => B,V
             attn_v = torch.matmul(
                 hidden_proj.squeeze(0), self.embed.weight.transpose(0, 1)
             )  # B,V
-            attn_vocab = F.softmax(attn_v, -1) # p_vocab / 어떤 vocab을 예측할건지
+            attn_vocab = F.softmax(attn_v, -1)
 
             # B,1,T * B,T,D => B,1,D
             context = torch.bmm(attn_history.unsqueeze(1), encoder_output)  # B,1,D
             p_gen = self.sigmoid(
-                self.w_gen(torch.cat([w, hidden.transpose(0, 1), context], -1)) # B , 1, 3 * D를 w_gen에 넣어줌
+                self.w_gen(torch.cat([w, hidden.transpose(0, 1), context], -1))
             )  # B,1
-            p_gen = p_gen.squeeze(-1) # 720, 1 -> 720
+            p_gen = p_gen.squeeze(-1)
 
             p_context_ptr = torch.zeros_like(attn_vocab, device=input_ids.device)
             p_context_ptr.scatter_add_(1, input_ids, attn_history)  # copy B,V
@@ -199,15 +309,16 @@ class SlotGenerator(nn.Module):
             _, w_idx = p_final.max(-1)
 
             if teacher is not None:
-                w = self.embedding(teacher[:, :, k]).reshape(batch_size * J, 1, -1)
+                w = self.embedding(teacher[:, :, k]).transpose(0, 1).reshape(batch_size * J, 1, -1)
             else:
                 w = self.embedding(w_idx).unsqueeze(1)  # B,1,D
             if k == 0:
-                gated_logit = self.w_gate(context.squeeze(1))  # (B,3)
-                all_gate_outputs = gated_logit.view(batch_size, J, self.n_gate) # (16, 45, 3)
+                gated_logit = self.w_gate(context.squeeze(1))  # B,3
+                all_gate_outputs = gated_logit.view(batch_size, J, self.n_gate)
             all_point_outputs[:, :, k, :] = p_final.view(batch_size, J, self.vocab_size)
 
-        return all_point_outputs, all_gate_outputs # (16, 45, 9, 35000) , (16, 45 ,3)
+        return all_point_outputs, all_gate_outputs
+
 
 class BertForUtteranceEncoding(BertPreTrainedModel):
     def __init__(self, config):
@@ -530,3 +641,37 @@ class SUMBT(nn.Module):
             torch.nn.init.xavier_normal_(module.weight_hh_l0)
             torch.nn.init.constant_(module.bias_ih_l0, 0.0)
             torch.nn.init.constant_(module.bias_hh_l0, 0.0)
+
+
+class GRUEncoder(nn.Module):
+    def __init__(self, vocab_size, d_model, n_layer, dropout, proj_dim=None, pad_idx=0):
+        super(GRUEncoder, self).__init__()
+        self.pad_idx = pad_idx
+        self.embed = nn.Embedding(vocab_size, d_model, padding_idx=pad_idx)
+        if proj_dim:
+            self.proj_layer = nn.Linear(d_model, proj_dim, bias=False)
+        else:   # default
+            self.proj_layer = None
+
+        self.d_model = proj_dim if proj_dim else d_model
+        self.gru = nn.GRU(
+            self.d_model,
+            self.d_model,
+            n_layer,
+            dropout=dropout,
+            batch_first=True,
+            bidirectional=True,
+        )
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, input_ids):
+        mask = input_ids.eq(self.pad_idx).unsqueeze(-1) # (batch_size, vocab_size, 1)
+        x = self.embed(input_ids)   # (bath_size, vocab_size, embedding_size)
+        if self.proj_layer:     # default == None
+            x = self.proj_layer(x)
+        x = self.dropout(x)
+        o, h = self.gru(x)
+        o = o.masked_fill(mask, 0.0)
+        output = o[:, :, : self.d_model] + o[:, :, self.d_model :] # summation
+        hidden = h[0] + h[1]  # n_layer 고려
+        return output, hidden   # output -> (batch_size, vocab_size, embedding_size) , hidden -> (batch_size, embedding_size)
