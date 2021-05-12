@@ -17,7 +17,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def postprocess_state(state):
     for i, s in enumerate(state):
-        s = s.replace(" : ", ":")
+        s = (
+            s.replace(" : ", ":")
+            .replace(" = ", "=")
+            .replace(" & ", "&")
+            .replace(" () ", " (")
+            .replace(" ) ", ")")
+        )
         state[i] = s.replace(" , ", ", ")
     return state
 
@@ -135,7 +141,7 @@ if __name__ == "__main__":
         os.mkdir(args.output_dir)
     json.dump(
         predictions,
-        open(f"{args.output_dir}/predictions.csv", "w"),
+        open(f"{args.output_dir}/predictions_3.csv", "w"),
         indent=2,
         ensure_ascii=False,
     )

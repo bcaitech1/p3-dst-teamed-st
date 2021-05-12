@@ -250,7 +250,7 @@ class SOMDSTPreprocessor(DSTPreprocessor):
         for slot, op in zip(self.slot_meta, pred_ops):
             if op == "dontcare":
                 self.prev_state[slot] = "dontcare"
-            elif op == "delete":
+            elif op == "delete" and slot in self.prev_state:
                 self.prev_state.pop(slot)
             elif op == "update":
                 tokens = self.trg_tokenizer.convert_ids_to_tokens(gen_list[gid])

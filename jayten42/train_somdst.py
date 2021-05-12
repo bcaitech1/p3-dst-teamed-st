@@ -176,7 +176,9 @@ if __name__ == "__main__":
     warmup_steps = int(t_total * args.warmup_ratio)
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
+        optimizer,
+        num_warmup_steps=0 if args.model_name else warmup_steps,
+        num_training_steps=t_total,
     )
 
     loss_fnc_1 = masked_cross_entropy_for_value  # generation
