@@ -49,10 +49,14 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default="SOMDST")
+    parser.add_argument("--n_op", type=int, default=6)
 
     parser.add_argument(
         "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
     )
+
+    parser.add_argument("--output_dir", type=str, default="/opt/ml/predictions")
+
     parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
     parser.add_argument("--model_name", type=str, default="")
     parser.add_argument("--ckpt", type=int, default=0)
@@ -95,7 +99,8 @@ if __name__ == "__main__":
         args.model_dir = os.path.join(args.model_dir, args.model_name)
     else:
         args.model_dir = increment_path(os.path.join(args.model_dir, args.run_name))
-    print(args.model_dir)
+    args.output_dir = increment_path(os.path.join(args.output_dir, args.run_name))
+    print(args.model_dir, args.output_dir)
     wandb.config.update(args)
     wandb.run.name = f"{args.run_name}-{wandb.run.id}"
     wandb.run.save()
@@ -110,7 +115,7 @@ if __name__ == "__main__":
     )
     # Define Preprocessor
     processor = SOMDSTPreprocessor(
-        slot_meta, tokenizer, max_seq_length=args.max_seq_length
+        slot_meta, tokenizer, max_seq_length=args.max_seq_length, n_op=args.n_op
     )
     args.vocab_size = tokenizer.vocab_size + added_token_num
     # args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
@@ -122,29 +127,53 @@ if __name__ == "__main__":
     dev_examples = get_examples_from_dialogues(
         dev_data, user_first=False, dialogue_level=False
     )
-    if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features.pkl")):
+
+    eval_data = json.load(open(f"/opt/ml/input/data/eval_dataset/eval_dials.json", "r"))
+    eval_examples = get_examples_from_dialogues(
+        eval_data, user_first=False, dialogue_level=False
+    )
+
+    if not os.path.exists(
+        os.path.join(args.data_dir, f"train_somdst_n_op_{args.n_op}_features.pkl")
+    ):
         print("Cached Input Features not Found.\nLoad data and save.")
 
         # Extracting Featrues
         train_features = processor.convert_examples_to_features(train_examples)
         print("Save Data")
-        with open(os.path.join(args.data_dir, "train_somdst_features.pkl"), "wb") as f:
+        with open(
+            os.path.join(args.data_dir, f"train_somdst_n_op_{args.n_op}_features.pkl"),
+            "wb",
+        ) as f:
             pickle.dump(train_features, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_examples.pkl"), "wb") as f:
+        with open(
+            os.path.join(args.data_dir, f"dev_somdst_n_op_{args.n_op}_examples.pkl"),
+            "wb",
+        ) as f:
             pickle.dump(dev_examples, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_labels.pkl"), "wb") as f:
+        with open(
+            os.path.join(args.data_dir, f"dev_somdst_n_op_{args.n_op}_labels.pkl"), "wb"
+        ) as f:
             pickle.dump(dev_labels, f)
     else:
         print("Cached Input Features Found.\nLoad data from Cached")
-        with open(os.path.join(args.data_dir, "train_somdst_features.pkl"), "rb") as f:
+        with open(
+            os.path.join(args.data_dir, f"train_somdst_n_op_{args.n_op}_features.pkl"),
+            "rb",
+        ) as f:
             train_features = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_examples.pkl"), "rb") as f:
+        with open(
+            os.path.join(args.data_dir, f"dev_somdst_n_op_{args.n_op}_examples.pkl"),
+            "rb",
+        ) as f:
             dev_examples = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_labels.pkl"), "rb") as f:
+        with open(
+            os.path.join(args.data_dir, f"dev_somdst_n_op_{args.n_op}_labels.pkl"), "rb"
+        ) as f:
             dev_labels = pickle.load(f)
 
     # Model 선언
-    model = SOMDST(args, 5, 4, processor.op2id["update"])
+    model = SOMDST(args, 5, args.n_op, processor.op2id["update"])
 
     if args.model_name:
         print("Checkpoint Load")
@@ -254,7 +283,7 @@ if __name__ == "__main__":
 
                 # gating loss
                 loss_2 = loss_fnc_2(
-                    state_scores.contiguous().view(-1, 4),
+                    state_scores.contiguous().view(-1, args.n_op),
                     gating_ids.contiguous().view(-1),
                 )
                 loss_3 = loss_fnc_2(domain_scores.view(-1, 5), domain_ids.view(-1))
@@ -287,7 +316,19 @@ if __name__ == "__main__":
         if best_score < eval_result["joint_goal_accuracy"]:
             print("Update Best checkpoint!")
             best_score = eval_result["joint_goal_accuracy"]
-        best_checkpoint = epoch + args.ckpt
+            best_checkpoint = epoch + args.ckpt
+            if best_score > 0.8:
+                predictions = inference(model, eval_examples, processor, device)
+                if not os.path.exists(args.output_dir):
+                    os.mkdir(args.output_dir)
+                json.dump(
+                    predictions,
+                    open(
+                        f"{args.output_dir}/{best_checkpoint}_{best_score:.4f}.csv", "w"
+                    ),
+                    indent=2,
+                    ensure_ascii=False,
+                )
 
         torch.save(
             model.state_dict(), f"{args.model_dir}/model-{epoch + args.ckpt}.bin"

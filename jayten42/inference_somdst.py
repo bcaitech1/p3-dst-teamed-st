@@ -63,7 +63,7 @@ def inference(model, eval_examples, processor, device):
             max_value=9,
             op_ids=None,
         )
-        _, op_ids = state_scores.view(-1, 4).max(-1)
+        _, op_ids = state_scores.view(-1, processor.n_op).max(-1)
         if gen_scores.size(1) > 0:
             generated = gen_scores.squeeze(0).max(-1)[1].tolist()
         else:
@@ -87,6 +87,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default="/opt/ml/predictions")
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--model_name", type=str, default="SOMDST2/model-7.bin")
+    parser.add_argument("--n_op", type=int, default=6)
 
     args = parser.parse_args()
     # args.data_dir = os.environ["SM_CHANNEL_EVAL"]
@@ -105,7 +106,9 @@ if __name__ == "__main__":
         {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
     )
     # Define Preprocessor
-    processor = SOMDSTPreprocessor(slot_meta, tokenizer, max_seq_length=512)
+    processor = SOMDSTPreprocessor(
+        slot_meta, tokenizer, max_seq_length=512, n_op=args.n_op
+    )
     eval_examples = get_examples_from_dialogues(
         eval_data, user_first=False, dialogue_level=False
     )
