@@ -34,7 +34,7 @@ def train(args):
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))  # 45개의 slot
     ontology = json.load(open(f"{args.data_dir}/ontology.json"))
     train_data, dev_data, dev_labels = load_dataset(train_data_file)  # item별로 분류 6301개 , 699개
-
+    print(train_data[:1])
     # list안에 dialogue별로 세분화, dict type -> DSTInputExample type , dev는 label이 none
     train_examples = get_examples_from_dialogues(  # item의 dialogue별로 46170개, 5075개
         train_data, user_first=True, dialogue_level=True
@@ -42,7 +42,8 @@ def train(args):
     dev_examples = get_examples_from_dialogues(
         dev_data, user_first=True, dialogue_level=True
     )
-
+    print(len(train_examples), len(dev_examples))
+    asdfasdf
     # Define Preprocessor
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
     max_turn = max([len(e['dialogue']) for e in train_data])
@@ -80,7 +81,7 @@ def train(args):
         collate_fn=processor.collate_fn,
     )
     print("# train:", len(train_data))
-    asdfasdfasdfasdf
+
     dev_data = WOSDataset(dev_features)
     dev_sampler = SequentialSampler(dev_data)
     dev_loader = DataLoader(
