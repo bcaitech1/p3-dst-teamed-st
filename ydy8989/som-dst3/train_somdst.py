@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
-from transformers import AdamW, AutoTokenizer, BertTokenizer, get_linear_schedule_with_warmup
+from transformers import AdamW, BertTokenizer, get_linear_schedule_with_warmup
 from pytorch_transformers import WarmupLinearSchedule
 from data_utils import WOSDataset, get_examples_from_dialogues, load_dataset, set_seed
 from eval_utils import DSTEvaluator
@@ -44,25 +44,21 @@ def increment_path(path, exist_ok=False):
         n = max(i) + 1 if i else 2
         return f"{path}{n}"
 
-def get_lr(optimizer):
-    for param_group in optimizer.param_groups:
-        return param_group['lr']
 
 if __name__ == "__main__":
     # wandb.init(project="Stage2-DST")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_name", type=str, default="SOMDST_KOELECRA")
+    parser.add_argument("--run_name", type=str, default="SOMDST")
 
     parser.add_argument(
         "--data_dir", type=str,
-        # default="/opt/ml/input/data/train_dataset",
-        default="../../input/data/train_dataset",
+        default="/opt/ml/input/data/train_dataset",
+        # default="../../input/data/train_dataset",
     )
-
-    parser.add_argument("--model_dir", type=str, default="../../result")
-    parser.add_argument("--model_name", type=str, default="")
-    parser.add_argument("--ckpt", type=int, default=0)
+    parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
+    parser.add_argument("--model_name", type=str, default="SOMDST")
+    parser.add_argument("--ckpt", type=int, default=48)
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
@@ -76,9 +72,7 @@ if __name__ == "__main__":
         "--model_name_or_path",
         type=str,
         help="Subword Vocab만을 위한 huggingface model",
-        # default="dsksd/bert-ko-small-minimal",
-        # default="BonjinKim/dst_kor_bert",
-        default="monologg/koelectra-base-v3-discriminator"
+        default="dsksd/bert-ko-small-minimal",
     )
 
     # Model Specific Argument
@@ -98,8 +92,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     args = parser.parse_args()
-    args.arch_name = args.model_name_or_path.split('/')[1].split('-')[0]
-    print(args.arch_name)
+
     # args.data_dir = os.environ["SM_CHANNEL_TRAIN"]
     if args.model_name:
         args.model_dir = os.path.join(args.model_dir, args.model_name)
@@ -115,9 +108,7 @@ if __name__ == "__main__":
     # Data Loading
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))
     # slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json", 'rt', encoding='UTF8'))
-    # tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
-    print(tokenizer.vocab_size)
+    tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
     added_token_num = tokenizer.add_special_tokens(
         {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
     )
@@ -202,7 +193,6 @@ if __name__ == "__main__":
     if not os.path.exists(args.model_dir):
         os.mkdir(args.model_dir)
 
-
     json.dump(
         vars(args),
         open(f"{args.model_dir}/exp_config.json", "w"),
@@ -284,7 +274,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             if step % 50 == 0:
-                current_lr = get_lr(optimizer)
+
                 print("[%d/%d] [%d/%d] mean_loss : %.3f, state_loss : %.3f, gen_loss : %.3f, dom_loss : %.3f" \
                       % (epoch + 1, n_epochs, step,
                          len(train_loader), np.mean(batch_loss),
@@ -293,13 +283,11 @@ if __name__ == "__main__":
                 logger.add_scalar("Train/gen_loss", loss_1, epoch * len(train_loader) + step)
                 logger.add_scalar("Train/gating_loss", loss_2, epoch * len(train_loader) + step)
                 logger.add_scalar("Train/domain_loss", loss_3, epoch * len(train_loader) + step)
-                logger.add_scalar("Train/Learning_rate", current_lr, epoch * len(train_loader) + step)
                 batch_loss = []
         predictions = inference(model, dev_examples, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
         for k, v in eval_result.items():
             print(f"{k}: {v}")
-            logger.add_scalar(f"{k}", v, epoch)
             # wandb.log({k: v})
         if best_score < eval_result["joint_goal_accuracy"]:
             print("Update Best checkpoint!")
