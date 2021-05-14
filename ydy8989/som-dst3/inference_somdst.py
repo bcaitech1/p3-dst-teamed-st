@@ -1,7 +1,7 @@
 import argparse
 import os
 import json
-
+print(os.getcwd())
 import torch
 from torch.utils.data import DataLoader, SequentialSampler
 from tqdm import tqdm
@@ -49,6 +49,7 @@ def inference(model, eval_examples, processor, device):
             max_value,
             guids,
         ) = batch
+
         domain_scores, state_scores, gen_scores = model(
             input_ids=input_ids,
             token_type_ids=segment_ids,
@@ -57,7 +58,7 @@ def inference(model, eval_examples, processor, device):
             max_value=9,
             op_ids=None,
         )
-        _, op_ids = state_scores.view(-1, 4).max(-1)
+        _, op_ids = state_scores.view(-1, 6).max(-1)
         if gen_scores.size(1) > 0:
             generated = gen_scores.squeeze(0).max(-1)[1].tolist()
         else:
@@ -80,7 +81,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
     parser.add_argument("--output_dir", type=str, default="/opt/ml/predictions")
     parser.add_argument("--eval_batch_size", type=int, default=32)
-    parser.add_argument("--model_name", type=str, default="SOMDST2/model-7.bin")
+    parser.add_argument("--model_name", type=str, default="SOMDST/model-17.bin")
 
     args = parser.parse_args()
     # args.data_dir = os.environ["SM_CHANNEL_EVAL"]
@@ -89,7 +90,7 @@ if __name__ == "__main__":
     args.model_dir = os.path.join(args.model_dir, args.model_name)
     args.output_dir = os.path.join(args.output_dir, args.model_name.split("/")[0])
     model_dir_path = os.path.dirname(args.model_dir)
-    eval_data = json.load(open(f"{args.data_dir}/eval_dials.json", "r"))
+    eval_data = json.load(open(f"{args.data_dir}/eval_dials.json", "r",))
     config = json.load(open(f"{model_dir_path}/exp_config.json", "r"))
     config = argparse.Namespace(**config)
     slot_meta = json.load(open(f"{model_dir_path}/slot_meta.json", "r"))
@@ -122,7 +123,7 @@ if __name__ == "__main__":
             tokenizer.encode(slot.replace("-", " "), add_special_tokens=False)
         )
 
-    model = SOMDST(config, 5, 4, processor.op2id["update"])
+    model = SOMDST(config, 5, 6, processor.op2id["update"])
 
     ckpt = torch.load(args.model_dir, map_location="cpu")
     model.load_state_dict(ckpt)

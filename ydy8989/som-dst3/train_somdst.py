@@ -6,13 +6,14 @@ import pickle
 import glob
 from pathlib import Path
 import re
-
+from torch.utils.tensorboard import SummaryWriter
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
 from transformers import AdamW, BertTokenizer, get_linear_schedule_with_warmup
-
+from pytorch_transformers import WarmupLinearSchedule
 from data_utils import WOSDataset, get_examples_from_dialogues, load_dataset, set_seed
 from eval_utils import DSTEvaluator
 from evaluation import _evaluation
@@ -21,7 +22,7 @@ from models import SOMDST, masked_cross_entropy_for_value
 from preprocessor import SOMDSTPreprocessor
 
 import torch.cuda.amp as amp
-import wandb
+# import wandb
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -45,23 +46,25 @@ def increment_path(path, exist_ok=False):
 
 
 if __name__ == "__main__":
-    wandb.init(project="Stage2-DST")
+    # wandb.init(project="Stage2-DST")
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default="SOMDST")
 
     parser.add_argument(
-        "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
+        "--data_dir", type=str,
+        default="/opt/ml/input/data/train_dataset",
+        # default="../../input/data/train_dataset",
     )
     parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
-    parser.add_argument("--model_name", type=str, default="")
-    parser.add_argument("--ckpt", type=int, default=0)
+    parser.add_argument("--model_name", type=str, default="SOMDST")
+    parser.add_argument("--ckpt", type=int, default=48)
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--adam_epsilon", type=float, default=1e-4)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
-    parser.add_argument("--num_train_epochs", type=int, default=30)
+    parser.add_argument("--num_train_epochs", type=int, default=50)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
     parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--max_seq_length", type=int, default=512)
@@ -96,14 +99,15 @@ if __name__ == "__main__":
     else:
         args.model_dir = increment_path(os.path.join(args.model_dir, args.run_name))
     print(args.model_dir)
-    wandb.config.update(args)
-    wandb.run.name = f"{args.run_name}-{wandb.run.id}"
-    wandb.run.save()
+    # wandb.config.update(args)
+    # wandb.run.name = f"{args.run_name}-{wandb.run.id}"
+    # wandb.run.save()
     # random seed 고정
     set_seed(args.random_seed)
 
     # Data Loading
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))
+    # slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json", 'rt', encoding='UTF8'))
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
     added_token_num = tokenizer.add_special_tokens(
         {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
@@ -122,29 +126,30 @@ if __name__ == "__main__":
     dev_examples = get_examples_from_dialogues(
         dev_data, user_first=False, dialogue_level=False
     )
-    if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features.pkl")):
+
+    if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features6.pkl")):
         print("Cached Input Features not Found.\nLoad data and save.")
 
         # Extracting Featrues
         train_features = processor.convert_examples_to_features(train_examples)
         print("Save Data")
-        with open(os.path.join(args.data_dir, "train_somdst_features.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "wb") as f:
             pickle.dump(train_features, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_examples.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "wb") as f:
             pickle.dump(dev_examples, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_labels.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "wb") as f:
             pickle.dump(dev_labels, f)
     else:
         print("Cached Input Features Found.\nLoad data from Cached")
-        with open(os.path.join(args.data_dir, "train_somdst_features.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "rb") as f:
             train_features = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_examples.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "rb") as f:
             dev_examples = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_labels.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "rb") as f:
             dev_labels = pickle.load(f)
 
     # Model 선언
-    model = SOMDST(args, 5, 4, processor.op2id["update"])
+    model = SOMDST(args, 5, 6, processor.op2id["update"])
 
     if args.model_name:
         print("Checkpoint Load")
@@ -152,7 +157,7 @@ if __name__ == "__main__":
         model.load_state_dict(ckpt)
 
     # model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
-    wandb.watch(model)
+    # wandb.watch(model)
     # print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
     model.to(device)
     print("Model is initialized")
@@ -173,11 +178,14 @@ if __name__ == "__main__":
     # Optimizer 및 Scheduler 선언
     n_epochs = args.num_train_epochs
     t_total = len(train_loader) * n_epochs
-    warmup_steps = int(t_total * args.warmup_ratio)
+    # warmup_steps = int(t_total * args.warmup_ratio)
+    num_train_steps = int(len(train_data) / args.train_batch_size * n_epochs)
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, eps=args.adam_epsilon)
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
-    )
+    # scheduler = get_linear_schedule_with_warmup(
+    #     optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
+    # )
+    scheduler = WarmupLinearSchedule(optimizer, int(num_train_steps * 0.1),
+                                         t_total=num_train_steps)
 
     loss_fnc_1 = masked_cross_entropy_for_value  # generation
     loss_fnc_2 = nn.CrossEntropyLoss()  # gating
@@ -197,12 +205,12 @@ if __name__ == "__main__":
         indent=2,
         ensure_ascii=False,
     )
-
+    logger = SummaryWriter(log_dir=args.model_dir)
     best_score, best_checkpoint = 0, 0
-    for epoch in tqdm(range(n_epochs)):
-
+    for epoch in range(n_epochs):
+        batch_loss = []
         model.train()
-        for step, batch in enumerate(tqdm(train_loader)):
+        for step, batch in enumerate(train_loader):
             batch = [
                 b.to(device)
                 if not isinstance(b, int) and not isinstance(b, list)
@@ -252,11 +260,12 @@ if __name__ == "__main__":
 
                 # gating loss
                 loss_2 = loss_fnc_2(
-                    state_scores.contiguous().view(-1, 4),
+                    state_scores.contiguous().view(-1, 6),
                     gating_ids.contiguous().view(-1),
                 )
                 loss_3 = loss_fnc_2(domain_scores.view(-1, 5), domain_ids.view(-1))
                 loss = loss_1 + loss_2 + loss_3
+                batch_loss.append(loss.item())
 
                 loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
@@ -264,24 +273,22 @@ if __name__ == "__main__":
             scheduler.step()
             optimizer.zero_grad()
 
-            if step % 100 == 0:
-                print(
-                    f"[{epoch + args.ckpt}/{n_epochs + args.ckpt}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}, domain: {loss_3.item()}"
-                )
-                wandb.log(
-                    {
-                        "loss": loss.item(),
-                        "gen loss": loss_1.item(),
-                        "gate loss": loss_2.item(),
-                        "domain loss": loss_3.item(),
-                    }
-                )
+            if step % 50 == 0:
 
+                print("[%d/%d] [%d/%d] mean_loss : %.3f, state_loss : %.3f, gen_loss : %.3f, dom_loss : %.3f" \
+                      % (epoch + 1, n_epochs, step,
+                         len(train_loader), np.mean(batch_loss),
+                         loss_1.item(), loss_2.item(), loss_3.item()))
+                logger.add_scalar("Train/loss", loss, epoch * len(train_loader) + step)
+                logger.add_scalar("Train/gen_loss", loss_1, epoch * len(train_loader) + step)
+                logger.add_scalar("Train/gating_loss", loss_2, epoch * len(train_loader) + step)
+                logger.add_scalar("Train/domain_loss", loss_3, epoch * len(train_loader) + step)
+                batch_loss = []
         predictions = inference(model, dev_examples, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
         for k, v in eval_result.items():
             print(f"{k}: {v}")
-            wandb.log({k: v})
+            # wandb.log({k: v})
         if best_score < eval_result["joint_goal_accuracy"]:
             print("Update Best checkpoint!")
             best_score = eval_result["joint_goal_accuracy"]
