@@ -100,6 +100,7 @@ def train(args):
     loss_fnc_1 = masked_cross_entropy_for_value  # generation
     loss_fnc_2 = nn.CrossEntropyLoss()  # gating
 
+
     if not os.path.exists(args.model_dir):
         os.mkdir(args.model_dir)
     if not os.path.exists(f"{args.model_dir}/{args.model}"):
