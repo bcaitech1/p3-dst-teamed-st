@@ -29,6 +29,7 @@ def postprocess_state(state):
     return state
 
 
+
 def inference(model, eval_examples, processor, device):
     processor.reset_state()
     model.eval()
