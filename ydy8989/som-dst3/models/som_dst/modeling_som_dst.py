@@ -1,7 +1,9 @@
 import torch.nn as nn
 import torch
 from transformers import AutoModel
+
 from modeling_bert import BertOnlyMLMHead
+
 
 class SOMDST(nn.Module):
     """Some Information about SOMDST"""
