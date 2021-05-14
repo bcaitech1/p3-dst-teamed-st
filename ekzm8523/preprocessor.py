@@ -19,7 +19,6 @@ class TRADEPreprocessor(DSTPreprocessor):
         self.gating2id = {"none": 0, "dontcare": 1, "yes": 2, "no": 3, "ptr": 4}
         self.id2gating = {v: k for k, v in self.gating2id.items()}
         self.max_seq_length = max_seq_length
-
     def _convert_example_to_feature(self, example):
         dialogue_context = " [SEP] ".join(example.context_turns + example.current_turn)
 
@@ -117,6 +116,7 @@ class TRADEPreprocessorTest(DSTPreprocessor):
         self.gating2id = {"none": 0, "dontcare": 1, "yes": 2, "no": 3, "ptr": 4}
         self.id2gating = {v: k for k, v in self.gating2id.items()}
         self.max_seq_length = max_seq_length
+        self.pre_labels = []
 
     def _convert_example_to_feature(self, example):
 
@@ -125,15 +125,23 @@ class TRADEPreprocessorTest(DSTPreprocessor):
         if example.context_turns and example.context_turns[0] == '':
             example.context_turns = example.context_turns[1:]
 
-        value_list = []
-        if example.label:
-            value_list = [label.split('-')[-1] for label in example.label]
+
+        state = convert_state_dict(self.pre_labels)
+
+        state_text = " [STATE] "
+        for slot in self.slot_meta:
+            if slot in state:
+                state_text += state[slot] + " [STATE] "
+            else:
+                state_text += "_ [STATE] "
+
         if len(example.context_turns) > 3:
             dialogue_context = "[CLS] " + " [SEP] ".join(example.context_turns[-2:] + example.current_turn)
         else:
             dialogue_context = "[CLS] " + " [SEP] ".join(example.context_turns + example.current_turn)
-        state_text = " [STATE] " + " [STATE] ".join(value_list) + " [SEP]"
         dialogue_id = self.src_tokenizer.encode(dialogue_context, add_special_tokens=False)
+
+
         state_id = self.src_tokenizer.encode(state_text, add_special_tokens=False)
 
         if len(dialogue_id) + len(state_id) > self.max_seq_length:
@@ -159,6 +167,7 @@ class TRADEPreprocessorTest(DSTPreprocessor):
             target_ids.append(target_id)
             gating_id.append(self.gating2id.get(value, self.gating2id["ptr"]))
         target_ids = self.pad_ids(target_ids, self.trg_tokenizer.pad_token_id)
+        self.pre_labels = example.label
         return OpenVocabDSTFeature(
             example.guid, input_id, segment_id, gating_id, target_ids
         )
@@ -187,7 +196,7 @@ class TRADEPreprocessorTest(DSTPreprocessor):
                 token_id_list.append(id_)
             value = self.trg_tokenizer.decode(token_id_list, skip_special_tokens=True)
 
-            if value == "none":
+            if value == "_":
                 continue
 
             recovered.append("%s-%s" % (slot, value))

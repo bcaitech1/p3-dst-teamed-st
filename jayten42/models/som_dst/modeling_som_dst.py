@@ -6,7 +6,7 @@ from transformers import AutoModel
 class SOMDST(nn.Module):
     """Some Information about SOMDST"""
 
-    def __init__(self, config, n_domain, n_op, update_id):
+    def  __init__(self, config, n_domain, n_op, update_id):
         super(SOMDST, self).__init__()
         bert = AutoModel.from_pretrained(config.model_name_or_path)
         bert.resize_token_embeddings(config.vocab_size)

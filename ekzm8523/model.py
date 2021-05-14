@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import CosineEmbeddingLoss, CrossEntropyLoss
 from transformers import BertModel, BertPreTrainedModel
+from transformers.modeling_bert import BertOnlyMLMHead
 
 
 def masked_cross_entropy_for_value(logits, target, pad_idx=0):
@@ -28,7 +29,6 @@ def masked_cross_entropy_for_value(logits, target, pad_idx=0):
 #             self.encoder = BertModel.from_pretrained(config.model_name_or_path)
 #         else:
 #             self.encoder = BertModel(config)
-#         self.encoder.embeddings.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=pad_idx)
 #
 #         self.decoder = SlotGenerator(
 #             config.vocab_size,
@@ -177,7 +177,7 @@ def masked_cross_entropy_for_value(logits, target, pad_idx=0):
 #
 #         return all_point_outputs, all_gate_outputs # (16, 45, 9, 35000) , (16, 45 ,3)
 
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class TRADE(nn.Module):
     def __init__(self, config, slot_vocab, slot_meta, pad_idx=0):
         super(TRADE, self).__init__()
@@ -187,7 +187,9 @@ class TRADE(nn.Module):
         else:
             self.encoder = BertModel(config)
 
-        self.encoder.resize_token_embeddings(config.vocab_size)
+        if config.vocab_size != self.encoder.embeddings.word_embeddings.num_embeddings:
+            self.encoder.resize_token_embeddings(config.vocab_size)
+
         self.decoder = SlotGenerator(
             config.vocab_size,
             config.hidden_size,
@@ -206,7 +208,7 @@ class TRADE(nn.Module):
 
     def forward(self, input_ids, token_type_ids, attention_mask=None, max_len=10, teacher=None):
 
-        encoder_outputs, pooled_output = self.encoder(input_ids=input_ids)
+        encoder_outputs, pooled_output = self.encoder(input_ids=input_ids, token_type_ids=token_type_ids)
         all_point_outputs, all_gate_outputs = self.decoder(
             input_ids, encoder_outputs, pooled_output.unsqueeze(0), attention_mask, max_len, teacher
         )

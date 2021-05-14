@@ -30,6 +30,29 @@ class OpenVocabDSTFeature:
     target_ids: Optional[Union[List[int], List[List[int]]]] # Union : 여러개의 type 허용 , Optional : None도 허용
 
 
+@dataclass
+class args:
+    data_dir = None
+    model_dir = None
+    model = None
+    train_batch_size = None
+    eval_batch_size = None
+    learning_rate = None
+    adam_epsilon = None
+    max_grad_norm = None
+    epochs = None
+    warmup_ratio = None
+    random_seed = None
+    model_name_or_path = None
+    hidden_size = None
+    vocab_size = None
+    hidden_dropout_prob = None
+    proj_dim = None
+    teacher_forcing_ratio = None
+    wandb_name = None
+    n_gate = None
+
+
 class WOSDataset(Dataset):
     def __init__(self, features):
         self.features = features
@@ -275,3 +298,4 @@ def tokenize_ontology(ontology, tokenizer, max_seq_length=12):
             slot_value.append(tokens)
         slot_values.append(torch.LongTensor(slot_value))
     return torch.LongTensor(slot_types), slot_values
+

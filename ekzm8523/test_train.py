@@ -11,13 +11,13 @@ import re
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import AdamW, BertTokenizer, get_linear_schedule_with_warmup
+from transformers import AdamW, BertTokenizer, get_linear_schedule_with_warmup, BertConfig
 
 from data_utils import (WOSDataset, get_examples_from_dialogues, load_dataset,
                         set_seed)
 from eval_utils import DSTEvaluator, eval_wrong_count
 from evaluation import _evaluation
-from inference import inference_trade, save_trade
+from inference import inference_trade, save_trade, teade_test_inference
 from model import TRADE, masked_cross_entropy_for_value, SUMBT
 from preprocessor import TRADEPreprocessor, TRADEPreprocessorTest
 from torch.cuda.amp import autocast,  GradScaler
@@ -58,12 +58,19 @@ def train(args):
     added_token_num = 0
     slot_meta = json.load(open("/opt/ml/input/data/train_dataset/slot_meta.json"))
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    # added_token_num = tokenizer.add_special_tokens({"additional_special_tokens": ["[STATE]"]})
-    args.vocab_size = added_token_num + tokenizer.vocab_size
-    processor = TRADEPreprocessor(slot_meta, tokenizer)
-    args.n_gate = len(processor.gating2id)
+
+    added_token_num = tokenizer.add_special_tokens({"additional_special_tokens": ["[STATE]"]})
+    processor = TRADEPreprocessorTest(slot_meta, tokenizer)
 
 
+    config = BertConfig.from_pretrained(args.model_name_or_path)
+    config.model_name_or_path = args.model_name_or_path
+    config.proj_dim = args.proj_dim
+    config.n_gate = args.n_gate = len(processor.gating2id)
+    config.vocab_size = added_token_num + tokenizer.vocab_size
+
+    if not os.path.exists(args.data_dir):
+        os.mkdir(args.data_dir)
 
     if not os.path.exists(os.path.join(args.data_dir, "train_features.bin")):
 
@@ -78,20 +85,19 @@ def train(args):
                                                    dialogue_level=False)
 
         train_features = processor.convert_examples_to_features(train_examples)
-        dev_features = processor.convert_examples_to_features(dev_examples)
 
-        with open('trade_data/train_features.bin', 'wb') as f:
+        with open(f'{args.data_dir}/train_features.bin', 'wb') as f:
             pickle.dump(train_features, f)
-        with open('trade_data/dev_features.bin', 'wb') as f:
-            pickle.dump(dev_features, f)
-        with open('trade_data/dev_labels.bin', 'wb') as f:
+        with open(f'{args.data_dir}/dev_examples.bin', 'wb') as f:
+            pickle.dump(dev_examples, f)
+        with open(f'{args.data_dir}/dev_labels.bin', 'wb') as f:
             pickle.dump(dev_labels, f)
     else:
-        with open('trade_data/train_features.bin', 'rb') as f:
+        with open(f'{args.data_dir}/train_features.bin', 'rb') as f:
             train_features = pickle.load(f)
-        with open('trade_data/dev_features.bin', 'rb') as f:
-            dev_features = pickle.load(f)
-        with open('trade_data/dev_labels.bin', 'rb') as f:
+        with open(f'{args.data_dir}/dev_examples.bin', 'rb') as f:
+            dev_examples = pickle.load(f)
+        with open(f'{args.data_dir}/dev_labels.bin', 'rb') as f:
             dev_labels = pickle.load(f)
 
 
@@ -103,7 +109,7 @@ def train(args):
         )
 
     # Model 선언
-    model = TRADE(args, tokenized_slot_meta, slot_meta)
+    model = TRADE(config, tokenized_slot_meta, slot_meta)
     model.to(device)
     print("Model is initialized")
 
@@ -125,24 +131,10 @@ def train(args):
 
     print("# train:", len(train_data))
 
-    dev_data = WOSDataset(dev_features)
-    dev_sampler = SequentialSampler(dev_data)
-    dev_loader = DataLoader(
-        dev_data,
-        batch_size=args.eval_batch_size,
-        sampler=dev_sampler,
-        collate_fn=processor.collate_fn,
-
-    )
-    predictions = inference_trade(model, dev_loader, processor, device)
-
     # check dev dataset
-    for data in dev_data:
-        if not data.guid in dev_labels:
+    for examples in dev_examples:
+        if not examples.guid in dev_labels:
             raise Exception("wrong dev data set check of the dataset")
-
-
-    print("# dev:", len(dev_data))
 
     # Optimizer 및 Scheduler 선언
 
@@ -235,7 +227,7 @@ def train(args):
                     f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()} time: {int(time.time() - start)}second"
                 )
 
-        predictions = inference_trade(model, dev_loader, processor, device)
+        predictions = teade_test_inference(model, dev_examples, processor, device)
         wrong_value, wrong_slot = eval_wrong_count(predictions, dev_labels)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
         for k, v in eval_result.items():
@@ -278,7 +270,7 @@ def train(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, default="/opt/ml/code/ekzm8523/trade_data")
+    parser.add_argument("--data_dir", type=str, default="/opt/ml/code/ekzm8523/trade_test_data2")
     parser.add_argument("--model_dir", type=str, default="/opt/ml/output/")
     parser.add_argument("--model", type=str, default="trade", help="select trade or sumbt")
     parser.add_argument("--train_batch_size", type=int, default=16)
@@ -310,7 +302,7 @@ if __name__ == "__main__":
                         help="만약 지정되면 기존의 hidden_size는 embedding dimension으로 취급되고, proj_dim이 GRU의 hidden_size로 사용됨. hidden_size보다 작아야 함.",
                         default=None)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
-    parser.add_argument("--wandb_name", type=str, default=None)
+    parser.add_argument("--wandb_name", type=str, default="trade_enput_test_please..")
 
     args = parser.parse_args()
     print(args)
