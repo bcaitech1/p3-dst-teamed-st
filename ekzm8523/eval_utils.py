@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 class DSTEvaluator:
     def __init__(self, slot_meta):
         self.slot_meta = slot_meta
@@ -76,3 +78,26 @@ def compute_prf(gold, pred):
         else:
             precision, recall, F1, count = 0, 0, 0, 1
     return F1, recall, precision, count
+
+
+def eval_wrong_count(predictions, dev_labels):
+    wrong_value = defaultdict(float)
+    wrong_slot = defaultdict(float)
+    total = 0
+    for key in predictions.keys():
+        label_list = dev_labels[key]
+        pred_list = predictions[key]
+        for label in label_list:
+            domain, slot, value = label.split('-')
+            if label not in pred_list:
+                wrong_value[label] += 1
+                wrong_slot[domain + '-' + slot] += 1
+                total += 1
+
+    wrong_value = dict(sorted(wrong_value.items(), key=(lambda x: x[1]), reverse=True)[:10])
+    wrong_slot = dict(sorted(wrong_slot.items(), key=(lambda x: x[1]), reverse=True)[:10])
+    for key in wrong_value.keys():
+        wrong_value[key] /= total
+    for key in wrong_slot.keys():
+        wrong_slot[key] /= total
+    return wrong_value, wrong_slot

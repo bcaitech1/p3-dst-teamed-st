@@ -88,7 +88,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_dir", type=str, default="../../result")
     parser.add_argument("--output_dir", type=str, default="../../predictions")
     parser.add_argument("--eval_batch_size", type=int, default=32)
-    parser.add_argument("--model_number", type=str, default="26")
+    parser.add_argument("--model_number", type=str, default=47)
     parser.add_argument("--architecture", type=str, default="SOMDST_pre")
 
     args = parser.parse_args()
@@ -98,6 +98,7 @@ if __name__ == "__main__":
     # args.output_dir = os.environ["SM_OUTPUT_DATA_DIR"]
     args.model_dir = os.path.join(args.model_dir, args.model_name)
     args.output_dir = os.path.join(args.output_dir, args.model_name.split("/")[0])
+    print(args.output_dir)
     model_dir_path = os.path.dirname(args.model_dir)
     eval_data = json.load(open(f"{args.data_dir}/eval_dials.json",  'rt', encoding='UTF8'))
     config = json.load(open(f"{model_dir_path}/exp_config.json",  'rt', encoding='UTF8'))
