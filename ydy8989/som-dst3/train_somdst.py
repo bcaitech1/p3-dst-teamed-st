@@ -44,6 +44,9 @@ def increment_path(path, exist_ok=False):
         n = max(i) + 1 if i else 2
         return f"{path}{n}"
 
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 if __name__ == "__main__":
     # wandb.init(project="Stage2-DST")
@@ -57,7 +60,7 @@ if __name__ == "__main__":
         # default="../../input/data/train_dataset",
     )
     parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
-    parser.add_argument("--model_name", type=str, default="SOMDST")
+    parser.add_argument("--model_name", type=str, default="")
     parser.add_argument("--ckpt", type=int, default=48)
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
@@ -72,7 +75,8 @@ if __name__ == "__main__":
         "--model_name_or_path",
         type=str,
         help="Subword Vocab만을 위한 huggingface model",
-        default="dsksd/bert-ko-small-minimal",
+        # default="dsksd/bert-ko-small-minimal",
+        default="monologg/koelectra-base-v3-discriminator"
     )
 
     # Model Specific Argument
@@ -274,7 +278,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             if step % 50 == 0:
-
+                current_lr = get_lr(optimizer)
                 print("[%d/%d] [%d/%d] mean_loss : %.3f, state_loss : %.3f, gen_loss : %.3f, dom_loss : %.3f" \
                       % (epoch + 1, n_epochs, step,
                          len(train_loader), np.mean(batch_loss),
@@ -283,6 +287,7 @@ if __name__ == "__main__":
                 logger.add_scalar("Train/gen_loss", loss_1, epoch * len(train_loader) + step)
                 logger.add_scalar("Train/gating_loss", loss_2, epoch * len(train_loader) + step)
                 logger.add_scalar("Train/domain_loss", loss_3, epoch * len(train_loader) + step)
+                logger.add_scalar("Train/Learning_rate", current_lr, epoch * len(train_loader) + step)
                 batch_loss = []
         predictions = inference(model, dev_examples, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
