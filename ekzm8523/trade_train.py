@@ -281,6 +281,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str, default="/opt/ml/code/ekzm8523/trade_data")
     parser.add_argument("--model_dir", type=str, default="/opt/ml/output/")
     parser.add_argument("--model", type=str, default="trade", help="select trade or sumbt")
+
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=3e-5)

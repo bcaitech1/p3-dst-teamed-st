@@ -5,7 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import CosineEmbeddingLoss, CrossEntropyLoss
-from transformers import BertModel, BertPreTrainedModel
+from transformers import BertModel, BertPreTrainedModel, BertConfig
+
 from transformers.modeling_bert import BertOnlyMLMHead
 
 
@@ -195,6 +196,7 @@ class TRADE(nn.Module):
             config.hidden_size,
             config.hidden_dropout_prob,
             config.n_gate,
+            config,
             None,
             pad_idx,
         )
