@@ -69,6 +69,12 @@ def inference(model, eval_examples, processor, device):
         predictions[guids[0]] = prediction
     return predictions
 
+
+def wrong_output(predictions, labels):
+    pass
+
+
+
 def direct_output(model_path=None, model=None, processor=None):
     """
     model,processor 혹은 model_path 둘중 하나는 정확히 넣어주어야 실행됩니다.

@@ -13,6 +13,8 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
 from transformers import AdamW, BertTokenizer, get_linear_schedule_with_warmup
 
+from pytorch_transformers import WarmupLinearSchedule
+
 from data_utils import WOSDataset, get_examples_from_dialogues, load_dataset, set_seed
 from evaluation import _evaluation
 from inference_somdst import inference
@@ -57,44 +59,32 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default="SOMDST")
-
-    parser.add_argument(
-        "--data_dir", type=str, default="/opt/ml/code/ekzm8523/somdst/somdst_data/"
-    )
+    parser.add_argument("--data_dir", type=str, default="/opt/ml/code/ekzm8523/somdst/somdst_data/")
     parser.add_argument("--model_dir", type=str, default="/opt/ml/output")
     parser.add_argument("--model_name", type=str, default="")
-    parser.add_argument("--ckpt", type=int, default=0)
+    parser.add_argument("--ckpt", type=int, default=24)
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--adam_epsilon", type=float, default=1e-8)
+
+    parser.add_argument("--learning_rate", type=float, default=1e-5)
+    # parser.add_argument("--enc_lr", type=float, default=1e-5)
+    # parser.add_argument("--dec_lr", type=float, default=2e-5)
+    # parser.add_argument("--enc_warmup", type=float, default=0.1)
+    # parser.add_argument("--dec_warmup", type=float, default=0.1)
+
+    parser.add_argument("--adam_epsilon", type=float, default=1e-4)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     parser.add_argument("--num_train_epochs", type=int, default=50)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
     parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--max_seq_length", type=int, default=512)
-    parser.add_argument(
-        "--model_name_or_path",
-        type=str,
-        help="Subword Vocab만을 위한 huggingface model",
-        default="dsksd/bert-ko-small-minimal",
-    )
+    parser.add_argument("--model_name_or_path", type=str, default="dsksd/bert-ko-small-minimal",)
 
     # Model Specific Argument
     parser.add_argument("--hidden_size", type=int, help="GRU의 hidden size", default=768)
-    parser.add_argument(
-        "--vocab_size",
-        type=int,
-        help="vocab size, subword vocab tokenizer에 의해 특정된다",
-        default=None,
-    )
+    parser.add_argument("--vocab_size", type=int, default=None)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.1)
-    parser.add_argument(
-        "--proj_dim",
-        type=int,
-        help="만약 지정되면 기존의 hidden_size는 embedding dimension으로 취급되고, proj_dim이 GRU의 hidden_size로 사용됨. hidden_size보다 작아야 함.",
-        default=None,
-    )
+    parser.add_argument("--proj_dim", type=int, default=None,)
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     parser.add_argument("--wandb_name", type=str, default=None)
 
@@ -153,16 +143,15 @@ if __name__ == "__main__":
     # Model 선언
     model = SOMDST(args, 5, 4, processor.op2id["update"])
 
-
     if save:
         wandb.init(project='pstage3', entity='ekzm8523')
         wandb.config.update(args)
         wandb.run.name = args.wandb_name
         wandb.watch(model)
-    # if args.model_name:
-    #     print("Checkpoint Load")
-    #     ckpt = torch.load(os.path.join(args.model_dir, f"model-{args.ckpt}.bin"))
-    #     model.load_state_dict(ckpt)
+    if args.model_name:
+        print("Checkpoint Load")
+        ckpt = torch.load(os.path.join(args.model_name))
+        model.load_state_dict(ckpt)
 
     # model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
     # print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
@@ -190,6 +179,25 @@ if __name__ == "__main__":
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
     )
+    #
+    # num_train_steps = int(len(train_loader) / args.train_batch_size * n_epochs)
+    #
+    # no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+    # enc_param_optimizer = list(model.encoder.named_parameters())
+    # enc_optimizer_grouped_parameters = [
+    #     {'params': [p for n, p in enc_param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+    #     {'params': [p for n, p in enc_param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+    # ]
+    #
+    # enc_optimizer = AdamW(enc_optimizer_grouped_parameters, lr=args.enc_lr)
+    # enc_scheduler = WarmupLinearSchedule(enc_optimizer, int(num_train_steps * args.enc_warmup),
+    #                                      t_total=num_train_steps)
+    #
+    # dec_param_optimizer = list(model.decoder.parameters())
+    # dec_optimizer = AdamW(dec_param_optimizer, lr=args.dec_lr)
+    # dec_scheduler = WarmupLinearSchedule(dec_optimizer, int(num_train_steps * args.dec_warmup),
+    #                                      t_total=num_train_steps)
+
 
     loss_fnc_1 = masked_cross_entropy_for_value  # generation
     loss_fnc_2 = nn.CrossEntropyLoss()  # gating
@@ -246,34 +254,41 @@ if __name__ == "__main__":
             else:
                 tf = None
 
-            domain_scores, state_scores, gen_scores = model(
-                input_ids=input_ids,
-                token_type_ids=segment_ids,
-                slot_positions=slot_position_ids,
-                attention_mask=input_masks,
-                max_value=max_value,
-                op_ids=gating_ids,
-                max_update=max_update,
-                teacher=tf,
-            )
+            with amp.autocast():
 
-            # generation loss
-            loss_1 = loss_fnc_1(
-                gen_scores.contiguous(),
-                target_ids.contiguous(),
-                tokenizer.pad_token_id,
-            )
+                domain_scores, state_scores, gen_scores = model(
+                    input_ids=input_ids,
+                    token_type_ids=segment_ids,
+                    slot_positions=slot_position_ids,
+                    attention_mask=input_masks,
+                    max_value=max_value,
+                    op_ids=gating_ids,
+                    max_update=max_update,
+                    teacher=tf,
+                )
 
-            # gating loss
-            loss_2 = loss_fnc_2(
-                state_scores.contiguous().view(-1, 4),
-                gating_ids.contiguous().view(-1),
-            )
-            loss_3 = loss_fnc_2(domain_scores.view(-1, 5), domain_ids.view(-1))
-            loss = loss_1 + loss_2 + loss_3
+                # generation loss
+                loss_1 = loss_fnc_1(
+                    gen_scores.contiguous(),
+                    target_ids.contiguous(),
+                    tokenizer.pad_token_id,
+                )
 
-            loss.backward()
+                # gating loss
+                loss_2 = loss_fnc_2(
+                    state_scores.contiguous().view(-1, 4),
+                    gating_ids.contiguous().view(-1),
+                )
+                loss_3 = loss_fnc_2(domain_scores.view(-1, 5), domain_ids.view(-1))
+                loss = loss_1 + loss_2 + loss_3
+
+                loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+            # enc_optimizer.step()
+            # enc_scheduler.step()
+            # dec_optimizer.step()
+            # dec_scheduler.step()
+            # model.zero_grad()
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
@@ -282,14 +297,15 @@ if __name__ == "__main__":
                 print(
                     f"[{epoch + args.ckpt}/{n_epochs + args.ckpt}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}, domain: {loss_3.item()}"
                 )
-                wandb.log(
-                    {
-                        "loss": loss.item(),
-                        "gen loss": loss_1.item(),
-                        "gate loss": loss_2.item(),
-                        "domain loss": loss_3.item(),
-                    }
-                )
+                # if save:
+                #     wandb.log(
+                #         {
+                #             "loss": loss.item(),
+                #             "gen loss": loss_1.item(),
+                #             "gate loss": loss_2.item(),
+                #             "domain loss": loss_3.item(),
+                #         }
+                #     )
 
         predictions = inference(model, dev_examples, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)

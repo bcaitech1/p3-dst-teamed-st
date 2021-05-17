@@ -164,7 +164,7 @@ class Decoder(nn.Module):
                 w = self.dropout(w)
                 _, hidden = self.gru(w, hidden)  # 1 x B x H
                 attn_e = torch.bmm(encoder_output, hidden.permute(1, 2, 0))  # B x T x 1
-                attn_e = attn_e.squeeze(-1).masked_fill(mask, -1e8)
+                attn_e = attn_e.squeeze(-1).masked_fill(mask, -1e4)
                 attn_history = nn.functional.softmax(attn_e, -1)  # B x T
 
                 attn_v = torch.matmul(

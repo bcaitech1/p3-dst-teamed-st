@@ -119,6 +119,9 @@ class SOMDSTPreprocessor(DSTPreprocessor):
             if op == "dontcare":
                 self.prev_state[slot] = "dontcare"
             elif op == "delete":
+                if not slot in self.prev_state:
+                    print("delete error")
+                    continue
                 self.prev_state.pop(slot)
             elif op == "update":
                 tokens = self.trg_tokenizer.convert_ids_to_tokens(gen_list[gid])
