@@ -1,8 +1,7 @@
 import torch.nn as nn
 import torch
-import torch.nn.functional as F
-from transformers import AutoModel, ElectraModel
-from transformers.modeling_utils import SequenceSummary
+from transformers import AutoModel
+
 from modeling_bert import BertOnlyMLMHead
 
 
@@ -13,9 +12,7 @@ class SOMDST(nn.Module):
         super(SOMDST, self).__init__()
         bert = AutoModel.from_pretrained(config.model_name_or_path)
         bert.resize_token_embeddings(config.vocab_size)
-        self.n_domain = n_domain
-        self.n_op = n_op
-        self.encoder = BertEncoder(config, bert, self.n_domain, self.n_op, update_id)
+        self.encoder = BertEncoder(config, bert, 5, 6, update_id)
         self.decoder = Decoder(
             config, self.encoder.bert.embeddings.word_embeddings.weight
         )
@@ -158,12 +155,10 @@ class BertEncoder(nn.Module):
         self.hidden_size = config.hidden_size
         self.domain_classifier = nn.Linear(config.hidden_size, n_domain)
         self.op_classifier = nn.Linear(config.hidden_size, n_op)
-        # self.electra = ElectraModel(config)
-        self.sequence_summary = SequenceSummary(config)
         config.initializer_range = self.bert.config.initializer_range
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.update_id = update_id
-        # self.maxselen = config.max_seq
+
     def forward(
         self,
         input_ids,
@@ -177,16 +172,10 @@ class BertEncoder(nn.Module):
         outputs = self.bert(
             input_ids=input_ids,
             token_type_ids=token_type_ids,
-            attention_mask=attention_mask)
-        if self.config.arch_name=='bert':
-            #bert
-            sequence_output, pooled_output = outputs[:2]
-            domain_scores = self.domain_classifier(self.dropout(pooled_output))
-        elif self.config.arch_name=='koelectra':
-            #electra
-            sequence_output = outputs[0]
-            pooled_output = self.sequence_summary(sequence_output)
-            domain_scores = self.domain_classifier(self.dropout(pooled_output))
+            attention_mask=attention_mask,
+        )
+        sequence_output, pooled_output = outputs[:2]
+        domain_scores = self.domain_classifier(self.dropout(pooled_output))
         # state_positions: B x J
         # state_poas: B x J x H
         state_pos = state_positions[:, :, None].expand(-1, -1, sequence_output.size(-1))

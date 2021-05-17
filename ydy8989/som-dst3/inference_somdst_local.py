@@ -8,7 +8,7 @@ from tqdm import tqdm
 from transformers import BertTokenizer
 
 from data_utils import WOSDataset, get_examples_from_dialogues, convert_state_dict
-from models import SOMDST_pre, masked_cross_entropy_for_value
+from models import SOMDST, masked_cross_entropy_for_value
 from preprocessor import SOMDSTPreprocessor
 import torch.cuda.amp as amp
 
@@ -88,8 +88,8 @@ if __name__ == "__main__":
     parser.add_argument("--model_dir", type=str, default="../../result")
     parser.add_argument("--output_dir", type=str, default="../../predictions")
     parser.add_argument("--eval_batch_size", type=int, default=32)
-    parser.add_argument("--model_number", type=str, default=47)
-    parser.add_argument("--architecture", type=str, default="SOMDST_pre")
+    parser.add_argument("--model_number", type=str, default=16)
+    parser.add_argument("--architecture", type=str, default="SOMDST_KOELECTRA")
 
     args = parser.parse_args()
     args.model_name = args.architecture+f'/model-{args.model_number}.bin'
@@ -133,7 +133,7 @@ if __name__ == "__main__":
             tokenizer.encode(slot.replace("-", " "), add_special_tokens=False)
         )
 
-    model = SOMDST_pre(config, 5, 6, processor.op2id["update"])
+    model = SOMDST(config, 5, 6, processor.op2id["update"])
 
     ckpt = torch.load(args.model_dir, map_location="cpu")
     model.load_state_dict(ckpt)
