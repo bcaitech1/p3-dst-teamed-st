@@ -123,7 +123,7 @@ if __name__ == "__main__":
     args.n_gate = len(processor.op2id)  # gating 갯수 none, dontcare, ptr
     args.hidden_act = 'gelu'
     args.layer_norm_eps = 1e-12
-    args.model_name_or_path = 'dsksd/bert-ko-small-minimal'
+    args.model_name_or_path = 'BonjinKim/dst_kor_bert'
 
     train_data_file = f"{args.data_dir}/train_dials.json"
     train_data, dev_data, dev_labels = load_dataset(train_data_file)
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     loss_fnc_pretrain = nn.CrossEntropyLoss()
 
     #########
-    MLM_PRE = True
+    MLM_PRE = False
 
     n_pretrain_epochs = 3
     def mlm_pretrain(loader, n_epochs):
