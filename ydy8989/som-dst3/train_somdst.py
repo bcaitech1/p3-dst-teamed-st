@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
-from transformers import AdamW, AutoTokenizer, BertTokenizer, get_linear_schedule_with_warmup
+from transformers import AdamW, BertTokenizer, get_linear_schedule_with_warmup
 from pytorch_transformers import WarmupLinearSchedule
 from data_utils import WOSDataset, get_examples_from_dialogues, load_dataset, set_seed
 from eval_utils import DSTEvaluator
@@ -44,23 +44,17 @@ def increment_path(path, exist_ok=False):
         n = max(i) + 1 if i else 2
         return f"{path}{n}"
 
-def get_lr(optimizer):
-    for param_group in optimizer.param_groups:
-        return param_group['lr']
 
 if __name__ == "__main__":
     # wandb.init(project="Stage2-DST")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_name", type=str, default="SOMDST_KOELECRA")
+    parser.add_argument("--run_name", type=str, default="SOMDST_whole")
 
     parser.add_argument(
-        "--data_dir", type=str,
-        # default="/opt/ml/input/data/train_dataset",
-        default="../../input/data/train_dataset",
+        "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
     )
-
-    parser.add_argument("--model_dir", type=str, default="../../result")
+    parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
     parser.add_argument("--model_name", type=str, default="")
     parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--train_batch_size", type=int, default=16)
@@ -76,9 +70,7 @@ if __name__ == "__main__":
         "--model_name_or_path",
         type=str,
         help="Subword Vocab만을 위한 huggingface model",
-        # default="dsksd/bert-ko-small-minimal",
-        # default="BonjinKim/dst_kor_bert",
-        default="monologg/koelectra-base-v3-discriminator"
+        default="dsksd/bert-ko-small-minimal",
     )
 
     # Model Specific Argument
@@ -114,10 +106,7 @@ if __name__ == "__main__":
 
     # Data Loading
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))
-    # slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json", 'rt', encoding='UTF8'))
-    # tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
-    print(tokenizer.vocab_size)
+    tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
     added_token_num = tokenizer.add_special_tokens(
         {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
     )
@@ -129,32 +118,37 @@ if __name__ == "__main__":
     # args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
     train_data_file = f"{args.data_dir}/train_dials.json"
     train_data, dev_data, dev_labels = load_dataset(train_data_file)
+    print(len(train_data))
+    print(len(dev_data))
+    # asdfasdf
     train_examples = get_examples_from_dialogues(
         train_data, user_first=False, dialogue_level=False
     )
     dev_examples = get_examples_from_dialogues(
         dev_data, user_first=False, dialogue_level=False
     )
-
-    if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features6.pkl")):
+    print(len(train_examples))
+    print(len(dev_examples))
+    # asdfasdf
+    if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features_new.pkl")):
         print("Cached Input Features not Found.\nLoad data and save.")
 
         # Extracting Featrues
         train_features = processor.convert_examples_to_features(train_examples)
         print("Save Data")
-        with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features_new.pkl"), "wb") as f:
             pickle.dump(train_features, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples_new.pkl"), "wb") as f:
             pickle.dump(dev_examples, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels_new.pkl"), "wb") as f:
             pickle.dump(dev_labels, f)
     else:
         print("Cached Input Features Found.\nLoad data from Cached")
-        with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features_new.pkl"), "rb") as f:
             train_features = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples_new.pkl"), "rb") as f:
             dev_examples = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels_new.pkl"), "rb") as f:
             dev_labels = pickle.load(f)
 
     # Model 선언
@@ -201,7 +195,6 @@ if __name__ == "__main__":
 
     if not os.path.exists(args.model_dir):
         os.mkdir(args.model_dir)
-
 
     json.dump(
         vars(args),
@@ -284,7 +277,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             if step % 50 == 0:
-                current_lr = get_lr(optimizer)
+
                 print("[%d/%d] [%d/%d] mean_loss : %.3f, state_loss : %.3f, gen_loss : %.3f, dom_loss : %.3f" \
                       % (epoch + 1, n_epochs, step,
                          len(train_loader), np.mean(batch_loss),
@@ -293,7 +286,6 @@ if __name__ == "__main__":
                 logger.add_scalar("Train/gen_loss", loss_1, epoch * len(train_loader) + step)
                 logger.add_scalar("Train/gating_loss", loss_2, epoch * len(train_loader) + step)
                 logger.add_scalar("Train/domain_loss", loss_3, epoch * len(train_loader) + step)
-                logger.add_scalar("Train/Learning_rate", current_lr, epoch * len(train_loader) + step)
                 batch_loss = []
         predictions = inference(model, dev_examples, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)

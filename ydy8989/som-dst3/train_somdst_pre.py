@@ -75,7 +75,8 @@ if __name__ == "__main__":
         "--model_name_or_path",
         type=str,
         help="Subword Vocab만을 위한 huggingface model",
-        default="dsksd/bert-ko-small-minimal",
+        # default="dsksd/bert-ko-small-minimal",
+        default = 'BonjinKim/dst_kor_bert'
     )
 
     # Model Specific Argument
@@ -179,7 +180,6 @@ if __name__ == "__main__":
         num_workers=4,
     )
     print("# train:", len(train_data))
-
     print("# dev:", len(dev_examples))
 
     # Optimizer 및 Scheduler 선언
@@ -199,9 +199,9 @@ if __name__ == "__main__":
     loss_fnc_pretrain = nn.CrossEntropyLoss()
 
     #########
-    MLM_PRE = False
+    MLM_PRE = True
 
-    n_pretrain_epochs = 3
+    n_pretrain_epochs = 2
     def mlm_pretrain(loader, n_epochs):
         model.train()
         for step, batch in enumerate(loader):
