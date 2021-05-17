@@ -52,13 +52,11 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", type=str, default="SOMDST")
 
     parser.add_argument(
-        "--data_dir", type=str,
-        default="/opt/ml/input/data/train_dataset",
-        # default="../../input/data/train_dataset",
+        "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
     )
     parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
-    parser.add_argument("--model_name", type=str, default="SOMDST")
-    parser.add_argument("--ckpt", type=int, default=48)
+    parser.add_argument("--model_name", type=str, default="")
+    parser.add_argument("--ckpt", type=int, default=0)
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
@@ -107,7 +105,6 @@ if __name__ == "__main__":
 
     # Data Loading
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))
-    # slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json", 'rt', encoding='UTF8'))
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
     added_token_num = tokenizer.add_special_tokens(
         {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
@@ -126,7 +123,6 @@ if __name__ == "__main__":
     dev_examples = get_examples_from_dialogues(
         dev_data, user_first=False, dialogue_level=False
     )
-
     if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features6.pkl")):
         print("Cached Input Features not Found.\nLoad data and save.")
 
