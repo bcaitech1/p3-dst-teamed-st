@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import random
-
+import pickle
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -28,8 +28,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default="TRADE")
 
-    parser.add_argument("--data_dir", type=str, default="data/train_dataset")
-    parser.add_argument("--model_dir", type=str, default="results")
+    parser.add_argument(
+        "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
+    )
+    parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
@@ -37,12 +39,15 @@ if __name__ == "__main__":
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     parser.add_argument("--num_train_epochs", type=int, default=30)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
+    parser.add_argument("--word_drop", type=float, default=0.1)
+
     parser.add_argument("--random_seed", type=int, default=42)
+    parser.add_argument("--max_seq_length", type=int, default=512)
     parser.add_argument(
         "--model_name_or_path",
         type=str,
         help="Subword Vocab만을 위한 huggingface model",
-        default="monologg/koelectra-base-v3-discriminator",
+        default="dsksd/bert-ko-small-minimal",
     )
 
     # Model Specific Argument
@@ -63,8 +68,8 @@ if __name__ == "__main__":
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     args = parser.parse_args()
 
-    args.data_dir = os.environ["SM_CHANNEL_TRAIN"]
-    args.model_dir = os.path.join(os.environ["SM_MODEL_DIR"], args.run_name)
+    # args.data_dir = os.environ["SM_CHANNEL_TRAIN"]
+    args.model_dir = os.path.join(args.model_dir, args.run_name)
 
     wandb.config.update(args)
     wandb.run.name = f"{args.run_name}-{wandb.run.id}"
@@ -73,27 +78,42 @@ if __name__ == "__main__":
     set_seed(args.random_seed)
 
     # Data Loading
-    train_data_file = f"{args.data_dir}/train_dials.json"
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))
+    tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
+    # Define Preprocessor
+    processor = TRADEPreprocessor(
+        slot_meta,
+        tokenizer,
+        max_seq_length=args.max_seq_length,
+        word_drop=args.word_drop,
+    )
+    args.vocab_size = len(tokenizer)
+    args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
+    train_data_file = f"{args.data_dir}/train_dials.json"
     train_data, dev_data, dev_labels = load_dataset(train_data_file)
-
     train_examples = get_examples_from_dialogues(
         train_data, user_first=False, dialogue_level=False
     )
     dev_examples = get_examples_from_dialogues(
         dev_data, user_first=False, dialogue_level=False
     )
+    if not os.path.exists(os.path.join(args.data_dir, "train_trade_features.pkl")):
+        print("Cached Input Features not Found.\nLoad data and save.")
 
-    # Define Preprocessor
-    tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    processor = TRADEPreprocessor(slot_meta, tokenizer)
-    args.vocab_size = len(tokenizer)
-    args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
-
-    # Extracting Featrues
-    train_features = processor.convert_examples_to_features(train_examples)
-    dev_features = processor.convert_examples_to_features(dev_examples)
-
+        # Extracting Featrues
+        train_features = processor.convert_examples_to_features(train_examples)
+        dev_features = processor.convert_examples_to_features(dev_examples)
+        print("Save Data")
+        with open(os.path.join(args.data_dir, "train_trade_features.pkl"), "wb") as f:
+            pickle.dump(train_features, f)
+        with open(os.path.join(args.data_dir, "dev_trade_features.pkl"), "wb") as f:
+            pickle.dump(dev_features, f)
+    else:
+        print("Cached Input Features Found.\nLoad data from Cached")
+        with open(os.path.join(args.data_dir, "train_trade_features.pkl"), "rb") as f:
+            train_features = pickle.load(f)
+        with open(os.path.join(args.data_dir, "dev_trade_features.pkl"), "rb") as f:
+            dev_features = pickle.load(f)
     # Slot Meta tokenizing for the decoder initial inputs
     tokenized_slot_meta = []
     for slot in slot_meta:
@@ -102,10 +122,10 @@ if __name__ == "__main__":
         )
 
     # Model 선언
-    model = TRADE(args, tokenized_slot_meta)
-    model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
+    model = TRADEBERT(args, tokenized_slot_meta)
+    # model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
     wandb.watch(model)
-    print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
+    # print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
     model.to(device)
     print("Model is initialized")
 
@@ -116,6 +136,7 @@ if __name__ == "__main__":
         batch_size=args.train_batch_size,
         sampler=train_sampler,
         collate_fn=processor.collate_fn,
+        num_workers=4,
     )
     print("# train:", len(train_data))
 
@@ -126,6 +147,7 @@ if __name__ == "__main__":
         batch_size=args.eval_batch_size,
         sampler=dev_sampler,
         collate_fn=processor.collate_fn,
+        num_workers=4,
     )
     print("# dev:", len(dev_data))
 
@@ -159,25 +181,29 @@ if __name__ == "__main__":
 
     best_score, best_checkpoint = 0, 0
     for epoch in tqdm(range(n_epochs)):
-        with amp.autocast():
 
-            model.train()
-            for step, batch in enumerate(tqdm(train_loader)):
-                input_ids, segment_ids, input_masks, gating_ids, target_ids, guids = [
-                    b.to(device) if not isinstance(b, list) else b for b in batch
-                ]
+        model.train()
+        for step, batch in enumerate(tqdm(train_loader)):
+            input_ids, segment_ids, input_masks, gating_ids, target_ids, guids = [
+                b.to(device) if not isinstance(b, list) else b for b in batch
+            ]
 
-                # teacher forcing
-                if (
-                    args.teacher_forcing_ratio > 0.0
-                    and random.random() < args.teacher_forcing_ratio
-                ):
-                    tf = target_ids
-                else:
-                    tf = None
+            # teacher forcing
+            if (
+                args.teacher_forcing_ratio > 0.0
+                and random.random() < args.teacher_forcing_ratio
+            ):
+                tf = target_ids
+            else:
+                tf = None
+            with amp.autocast():
 
                 all_point_outputs, all_gate_outputs = model(
-                    input_ids, segment_ids, input_masks, target_ids.size(-1), tf
+                    input_ids=input_ids,
+                    token_type_ids=segment_ids,
+                    attention_mask=input_masks,
+                    max_len=target_ids.size(-1),
+                    teacher=tf,
                 )
 
                 # generation loss
@@ -200,27 +226,27 @@ if __name__ == "__main__":
                 scheduler.step()
                 optimizer.zero_grad()
 
-                if step % 100 == 0:
-                    print(
-                        f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}"
-                    )
-                    wandb.log(
-                        {
-                            "loss": loss.item(),
-                            "gen loss": loss_1.item(),
-                            "gate loss": loss_2.item(),
-                        }
-                    )
+            if step % 100 == 0:
+                print(
+                    f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}"
+                )
+                wandb.log(
+                    {
+                        "loss": loss.item(),
+                        "gen loss": loss_1.item(),
+                        "gate loss": loss_2.item(),
+                    }
+                )
 
-            predictions = inference(model, dev_loader, processor, device)
-            eval_result = _evaluation(predictions, dev_labels, slot_meta)
-            for k, v in eval_result.items():
-                print(f"{k}: {v}")
-                wandb.log({k: v})
-            if best_score < eval_result["joint_goal_accuracy"]:
-                print("Update Best checkpoint!")
-                best_score = eval_result["joint_goal_accuracy"]
-                best_checkpoint = epoch
+        predictions = inference(model, dev_loader, processor, device)
+        eval_result = _evaluation(predictions, dev_labels, slot_meta)
+        for k, v in eval_result.items():
+            print(f"{k}: {v}")
+            wandb.log({k: v})
+        if best_score < eval_result["joint_goal_accuracy"]:
+            print("Update Best checkpoint!")
+            best_score = eval_result["joint_goal_accuracy"]
+        best_checkpoint = epoch
 
         torch.save(model.state_dict(), f"{args.model_dir}/model-{epoch}.bin")
     print(f"Best checkpoint: {args.model_dir}/model-{best_checkpoint}.bin")

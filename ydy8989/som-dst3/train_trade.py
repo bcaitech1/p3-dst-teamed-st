@@ -17,13 +17,12 @@ from models import TRADE, TRADEBERT, masked_cross_entropy_for_value
 from preprocessor import TRADEPreprocessor
 
 import torch.cuda.amp as amp
-import wandb
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 if __name__ == "__main__":
-    wandb.init(project="Stage2-DST")
+    # wandb.init(project="Stage2-DST")
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default="TRADE")
@@ -66,9 +65,9 @@ if __name__ == "__main__":
     args.data_dir = os.environ["SM_CHANNEL_TRAIN"]
     args.model_dir = os.path.join(os.environ["SM_MODEL_DIR"], args.run_name)
 
-    wandb.config.update(args)
-    wandb.run.name = f"{args.run_name}-{wandb.run.id}"
-    wandb.run.save()
+    # wandb.config.update(args)
+    # wandb.run.name = f"{args.run_name}-{wandb.run.id}"
+    # wandb.run.save()
     # random seed 고정
     set_seed(args.random_seed)
 
@@ -104,7 +103,7 @@ if __name__ == "__main__":
     # Model 선언
     model = TRADE(args, tokenized_slot_meta)
     model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
-    wandb.watch(model)
+    # wandb.watch(model)
     print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
     model.to(device)
     print("Model is initialized")
@@ -204,19 +203,19 @@ if __name__ == "__main__":
                     print(
                         f"[{epoch}/{n_epochs}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}"
                     )
-                    wandb.log(
-                        {
-                            "loss": loss.item(),
-                            "gen loss": loss_1.item(),
-                            "gate loss": loss_2.item(),
-                        }
-                    )
+                    # wandb.log(
+                    #     {
+                    #         "loss": loss.item(),
+                    #         "gen loss": loss_1.item(),
+                    #         "gate loss": loss_2.item(),
+                    #     }
+                    # )
 
             predictions = inference(model, dev_loader, processor, device)
             eval_result = _evaluation(predictions, dev_labels, slot_meta)
             for k, v in eval_result.items():
                 print(f"{k}: {v}")
-                wandb.log({k: v})
+                # wandb.log({k: v})
             if best_score < eval_result["joint_goal_accuracy"]:
                 print("Update Best checkpoint!")
                 best_score = eval_result["joint_goal_accuracy"]

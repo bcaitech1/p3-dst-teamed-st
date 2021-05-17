@@ -2,15 +2,17 @@ import torch.nn as nn
 import torch
 from transformers import AutoModel
 
+from modeling_bert import BertOnlyMLMHead
+
 
 class SOMDST(nn.Module):
     """Some Information about SOMDST"""
 
-    def  __init__(self, config, n_domain, n_op, update_id):
+    def __init__(self, config, n_domain, n_op, update_id):
         super(SOMDST, self).__init__()
         bert = AutoModel.from_pretrained(config.model_name_or_path)
         bert.resize_token_embeddings(config.vocab_size)
-        self.encoder = BertEncoder(config, bert, n_domain, n_op, update_id)
+        self.encoder = BertEncoder(config, bert, 5, 6, update_id)
         self.decoder = Decoder(
             config, self.encoder.bert.embeddings.word_embeddings.weight
         )
@@ -52,6 +54,95 @@ class SOMDST(nn.Module):
 
         return domain_scores, state_scores, gen_scores
 
+class SOMDST_pre(nn.Module):
+    """Some Information about SOMDST"""
+
+    def __init__(self, config, n_domain, n_op, update_id):
+        super(SOMDST_pre, self).__init__()
+        self.config = config
+        bert = AutoModel.from_pretrained(config.model_name_or_path)
+        bert.resize_token_embeddings(config.vocab_size)
+        self.encoder = BertEncoder(config, bert, 5, 6, update_id)
+        self.decoder = Decoder(
+            config, self.encoder.bert.embeddings.word_embeddings.weight
+        )
+        self.mlm_head = BertOnlyMLMHead(config)
+
+    def forward(
+        self,
+        input_ids,
+        token_type_ids,
+        slot_positions,
+        attention_mask,
+        max_value,
+        op_ids=None,
+        max_update=None,
+        teacher=None,
+    ):
+        enc_outputs = self.encoder(
+            input_ids=input_ids,#input_ids
+            token_type_ids=token_type_ids,#segment_ids
+            state_positions=slot_positions,#slot_position_ids
+            attention_mask=attention_mask,#input_masks
+            op_ids=op_ids,#gating_ids
+            max_update=max_update,#max_update
+        )
+        (
+            domain_scores,
+            state_scores,
+            decoder_inputs,
+            sequence_output,
+            pooled_output,
+        ) = enc_outputs
+        gen_scores = self.decoder(
+            input_ids,
+            decoder_inputs,
+            sequence_output,
+            pooled_output,
+            max_value,
+            teacher,
+        )
+
+        return domain_scores, state_scores, gen_scores
+
+    @staticmethod
+    def mask_tokens(inputs, tokenizer, config, mlm_probability=0.15):
+        device = 'cuda'
+        """ Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original. """
+        labels = inputs.clone()
+        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
+        probability_matrix = torch.full(labels.shape, mlm_probability).to(device)
+        # special_tokens_mask = [tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()]
+
+        probability_matrix.masked_fill_(torch.eq(labels, 0), value=0.0)
+
+        masked_indices = torch.bernoulli(probability_matrix).bool()
+        labels[~masked_indices] = -100  # We only compute loss on masked tokens
+
+        # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
+        indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).to(device=device,
+                                                                             dtype=torch.bool) & masked_indices
+        inputs[indices_replaced] = tokenizer.convert_tokens_to_ids(["[MASK]"])[0]
+
+        # 10% of the time, we replace masked input tokens with random word
+        indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).to(device=device,
+                                                                           dtype=torch.bool) & masked_indices & ~indices_replaced
+        random_words = torch.randint(config.vocab_size, labels.shape, device=device, dtype=torch.long)
+        inputs[indices_random] = random_words[indices_random].to(device)
+
+        # The rest of the time (10% of the time) we keep the masked input tokens unchanged
+        return inputs, labels
+
+    def forward_pretrain(self, input_ids, token_type_ids, slot_positions, attention_mask, tokenizer):
+        input_ids, labels = self.mask_tokens(input_ids, tokenizer, self.config)
+        encoder_outputs = self.encoder(input_ids=input_ids,
+                                          token_type_ids = token_type_ids,
+                                          state_positions = slot_positions,
+                                          attention_mask = attention_mask)
+        # print(encoder_outputs[0].shape,encoder_outputs[1].shape, encoder_outputs[2].shape, encoder_outputs[3].shape, encoder_outputs[4].shape)
+        mlm_logits = self.mlm_head(encoder_outputs[3])
+        # print(mlm_logits)
+        return mlm_logits, labels
 
 class BertEncoder(nn.Module):
     """Some Information about BertEncoder"""

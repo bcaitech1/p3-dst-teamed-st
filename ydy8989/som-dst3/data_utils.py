@@ -27,30 +27,9 @@ class OpenVocabDSTFeature:
     input_id: List[int]
     segment_id: List[int]
     gating_id: List[int]
-    target_ids: Optional[Union[List[int], List[List[int]]]] # Union : 여러개의 type 허용 , Optional : None도 허용
-
-
-@dataclass
-class args:
-    data_dir = None
-    model_dir = None
-    model = None
-    train_batch_size = None
-    eval_batch_size = None
-    learning_rate = None
-    adam_epsilon = None
-    max_grad_norm = None
-    epochs = None
-    warmup_ratio = None
-    random_seed = None
-    model_name_or_path = None
-    hidden_size = None
-    vocab_size = None
-    hidden_dropout_prob = None
-    proj_dim = None
-    teacher_forcing_ratio = None
-    wandb_name = None
-    n_gate = None
+    target_ids: Optional[Union[List[int], List[List[int]]]]
+    slot_positions: [List[int]] = None
+    domain_id: int = None
 
 
 class WOSDataset(Dataset):
@@ -66,7 +45,7 @@ class WOSDataset(Dataset):
 
 
 def load_dataset(dataset_path, dev_split=0.1):
-    data = json.load(open(dataset_path))
+    data = json.load(open(dataset_path, 'rt', encoding='UTF8'))
     num_data = len(data)
     num_dev = int(num_data * dev_split)
     if not num_dev:
@@ -113,21 +92,16 @@ def set_seed(seed):
     torch.manual_seed(seed)
     if torch.cuda.device_count() > 0:
         torch.cuda.manual_seed_all(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)  # if use multi-GPU
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
 
 
 def split_slot(dom_slot_value, get_domain_slot=False):
     try:
-        dom, slot, value = dom_slot_value.split("-") # 온전한 데이터
+        dom, slot, value = dom_slot_value.split("-")
     except ValueError:
         tempo = dom_slot_value.split("-")
-        if len(tempo) < 2: # domain만 있을경우
+        if len(tempo) < 2:
             return dom_slot_value, dom_slot_value, dom_slot_value
-        dom, slot = tempo[0], tempo[1] # domain, slot만 있을경우
+        dom, slot = tempo[0], tempo[1]
         value = dom_slot_value.replace(f"{dom}-{slot}-", "").strip()
 
     if get_domain_slot:
@@ -150,15 +124,10 @@ def build_slot_meta(data):
 
 
 def convert_state_dict(state):
-    """
-    :param state: list
-    :return: dict
-    dic[s] = v : s = domain-slot(관광-종류) , v = value(박물관)
-    """
     dic = {}
     for slot in state:
-        s, v = split_slot(slot, get_domain_slot=True) # s = domain-slot(관광-종류) , v = value(박물관)
-        dic[s] = v # dic[관광-종류] = 박물관
+        s, v = split_slot(slot, get_domain_slot=True)
+        dic[s] = v
     return dic
 
 
@@ -168,6 +137,7 @@ class DSTInputExample:
     context_turns: List[str]
     current_turn: List[str]
     label: Optional[List[str]] = None
+    domains: List[str] = None
 
     def to_dict(self):
         return dataclasses.asdict(self)
@@ -199,13 +169,14 @@ def get_examples_from_dialogue(dialogue, user_first=False):
     examples = []
     history = []
     d_idx = 0
+    domains = dialogue["domains"]
     for idx, turn in enumerate(dialogue["dialogue"]):
-        if turn["role"] != "user": # role 먼저 시작하는 경우 제외
+        if turn["role"] != "user":
             continue
 
-        if idx: # not idx == 0
+        if idx:
             sys_utter = dialogue["dialogue"][idx - 1]["text"]
-        else: # idx is 0
+        else:
             sys_utter = ""
 
         user_utter = turn["text"]
@@ -221,6 +192,7 @@ def get_examples_from_dialogue(dialogue, user_first=False):
                 context_turns=context,
                 current_turn=current_turn,
                 label=state,
+                domains=domains,
             )
         )
         history.append(sys_utter)
@@ -251,7 +223,9 @@ class DSTPreprocessor:
         if max_length < 0:
             max_length = max(list(map(len, arrays)))
 
-        arrays = [array + [pad_idx] * (max_length - len(array)) for array in arrays]
+        arrays = [
+            array + [pad_idx] * (max_length - min(len(array), 512)) for array in arrays
+        ]
         return arrays
 
     def pad_id_of_matrix(self, arrays, padding, max_length=-1, left=False):
@@ -280,22 +254,3 @@ class DSTPreprocessor:
 
     def recover_state(self):
         raise NotImplementedError
-def tokenize_ontology(ontology, tokenizer, max_seq_length=12):
-    slot_types = []
-    slot_values = []
-    for k, v in ontology.items():
-        tokens = tokenizer.encode(k)
-        if len(tokens) < max_seq_length:
-            gap = max_seq_length - len(tokens)
-            tokens.extend([tokenizer.pad_token_id] *  gap)
-        slot_types.append(tokens)
-        slot_value = []
-        for vv in v:
-            tokens = tokenizer.encode(vv)
-            if len(tokens) < max_seq_length:
-                gap = max_seq_length - len(tokens)
-                tokens.extend([tokenizer.pad_token_id] *  gap)
-            slot_value.append(tokens)
-        slot_values.append(torch.LongTensor(slot_value))
-    return torch.LongTensor(slot_types), slot_values
-
