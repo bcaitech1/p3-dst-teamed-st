@@ -50,6 +50,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default="SOMDST")
     parser.add_argument("--n_op", type=int, default=6)
+    parser.add_argument("--n_domain", type=int, default=15)
 
     parser.add_argument(
         "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
@@ -134,7 +135,10 @@ if __name__ == "__main__":
     )
 
     if not os.path.exists(
-        os.path.join(args.data_dir, f"train_somdst_n_op_{args.n_op}_features.pkl")
+        os.path.join(
+            args.data_dir,
+            f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_features.pkl",
+        )
     ):
         print("Cached Input Features not Found.\nLoad data and save.")
 
@@ -142,38 +146,58 @@ if __name__ == "__main__":
         train_features = processor.convert_examples_to_features(train_examples)
         print("Save Data")
         with open(
-            os.path.join(args.data_dir, f"train_somdst_n_op_{args.n_op}_features.pkl"),
+            os.path.join(
+                args.data_dir,
+                f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_features.pkl",
+            ),
             "wb",
         ) as f:
             pickle.dump(train_features, f)
         with open(
-            os.path.join(args.data_dir, f"dev_somdst_n_op_{args.n_op}_examples.pkl"),
+            os.path.join(
+                args.data_dir,
+                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_examples.pkl",
+            ),
             "wb",
         ) as f:
             pickle.dump(dev_examples, f)
         with open(
-            os.path.join(args.data_dir, f"dev_somdst_n_op_{args.n_op}_labels.pkl"), "wb"
+            os.path.join(
+                args.data_dir,
+                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_labels.pkl",
+            ),
+            "wb",
         ) as f:
             pickle.dump(dev_labels, f)
     else:
         print("Cached Input Features Found.\nLoad data from Cached")
         with open(
-            os.path.join(args.data_dir, f"train_somdst_n_op_{args.n_op}_features.pkl"),
+            os.path.join(
+                args.data_dir,
+                f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_features.pkl",
+            ),
             "rb",
         ) as f:
             train_features = pickle.load(f)
         with open(
-            os.path.join(args.data_dir, f"dev_somdst_n_op_{args.n_op}_examples.pkl"),
+            os.path.join(
+                args.data_dir,
+                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_examples.pkl",
+            ),
             "rb",
         ) as f:
             dev_examples = pickle.load(f)
         with open(
-            os.path.join(args.data_dir, f"dev_somdst_n_op_{args.n_op}_labels.pkl"), "rb"
+            os.path.join(
+                args.data_dir,
+                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_labels.pkl",
+            ),
+            "rb",
         ) as f:
             dev_labels = pickle.load(f)
 
     # Model 선언
-    model = SOMDST(args, 5, args.n_op, processor.op2id["update"])
+    model = SOMDST(args, args.n_domain, args.n_op, processor.op2id["update"])
 
     if args.model_name:
         print("Checkpoint Load")
@@ -286,7 +310,9 @@ if __name__ == "__main__":
                     state_scores.contiguous().view(-1, args.n_op),
                     gating_ids.contiguous().view(-1),
                 )
-                loss_3 = loss_fnc_2(domain_scores.view(-1, 5), domain_ids.view(-1))
+                loss_3 = loss_fnc_2(
+                    domain_scores.view(-1, args.n_domain), domain_ids.view(-1)
+                )
                 loss = loss_1 + loss_2 + loss_3
 
                 loss.backward()

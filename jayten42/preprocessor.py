@@ -156,7 +156,25 @@ class SOMDSTPreprocessor(DSTPreprocessor):
         self.ontology = ontology
         self.op2id = OP2ID[n_op]
         self.id2op = {v: k for k, v in self.op2id.items()}
-        self.domain2id = {"관광": 0, "숙소": 1, "식당": 2, "지하철": 3, "택시": 4}
+        # self.domain2id = {"관광": 0, "숙소": 1, "식당": 2, "지하철": 3, "택시": 4}
+        self.domain2id = {
+            "관광": 0,
+            "숙소": 1,
+            "식당": 2,
+            "지하철": 3,
+            "택시": 4,
+            "관광, 숙소": 5,
+            "관광, 식당": 6,
+            "관광, 지하철": 7,
+            "관광, 택시": 8,
+            "숙소, 식당": 9,
+            "숙소, 지하철": 10,
+            "숙소, 택시": 11,
+            "식당, 지하철": 12,
+            "식당, 택시": 13,
+            "None": 14,
+        }
+
         self.id2domain = {v: k for k, v in self.domain2id.items()}
         self.prev_example = None
         self.prev_state = {}
@@ -225,16 +243,20 @@ class SOMDSTPreprocessor(DSTPreprocessor):
         if not self.prev_example:
             domain_slot = list(state.keys())
             if domain_slot:
-                domain_id = self.domain2id[domain_slot[0].split("-")[0]]
+                # domain_id = self.domain2id[domain_slot[0].split("-")[0]]
+                doms = ", ".join(sorted(set([d.split("-")[0] for d in domain_slot])))
+                domain_id = self.domain2id[doms]
             else:
-                domain_id = self.prev_domain_id
+                domain_id = self.domain2id["None"]
         else:
-            diff_state = set(example.label) - set(self.prev_example.label)
+            update_state = set(example.label) - set(self.prev_example.label)
+            delete_state = set(self.prev_example.label) - set(example.label)
+            diff_state = update_state | delete_state
             if not diff_state:
-                domain_id = self.prev_domain_id
+                domain_id = self.domain2id["None"]
             else:
-                domain_id = self.domain2id[list(diff_state)[0].split("-")[0]]
-
+                doms = ", ".join(sorted(set([d.split("-")[0] for d in diff_state])))
+                domain_id = self.domain2id[doms]
         self.prev_example = example
         self.prev_state = state
         self.prev_domain_id = domain_id

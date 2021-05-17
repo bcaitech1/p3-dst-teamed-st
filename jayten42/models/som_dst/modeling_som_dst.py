@@ -10,7 +10,7 @@ class SOMDST(nn.Module):
         super(SOMDST, self).__init__()
         bert = AutoModel.from_pretrained(config.model_name_or_path)
         bert.resize_token_embeddings(config.vocab_size)
-        self.encoder = BertEncoder(config, bert, 5, n_op, update_id)
+        self.encoder = BertEncoder(config, bert, n_domain, n_op, update_id)
         self.decoder = Decoder(
             config, self.encoder.bert.embeddings.word_embeddings.weight
         )
