@@ -8,7 +8,7 @@ from tqdm import tqdm
 from transformers import BertTokenizer
 
 from data_utils import WOSDataset, get_examples_from_dialogues, convert_state_dict
-from models import SOMDST_pre, masked_cross_entropy_for_value
+from models import SOMDST, masked_cross_entropy_for_value
 from preprocessor import SOMDSTPreprocessor
 import torch.cuda.amp as amp
 
@@ -16,10 +16,18 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def postprocess_state(state):
+    # state = ['숙소-가격대-적당', '숙소-스파 유무-yes', '숙소-종류-호텔']
+
     for i, s in enumerate(state):
         s = s.replace(" : ", ":")
+        s = s.replace(" = ", "=")
+        s = s.replace(" ) ", ")")
+        s = s.replace(" ( ", "(")
+        s = s.replace(" & ", "&")
+
         state[i] = s.replace(" , ", ", ")
     return state
+
 
 
 def inference(model, eval_examples, processor, device):
@@ -49,7 +57,6 @@ def inference(model, eval_examples, processor, device):
             max_value,
             guids,
         ) = batch
-
         domain_scores, state_scores, gen_scores = model(
             input_ids=input_ids,
             token_type_ids=segment_ids,
@@ -76,24 +83,27 @@ def inference(model, eval_examples, processor, device):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--data_dir", type=str, default="/opt/ml/input/data/eval_dataset"
+        "--data_dir", type=str, default="../../input/data/eval_dataset"
     )
-    parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
-    parser.add_argument("--output_dir", type=str, default="/opt/ml/predictions")
+    parser.add_argument("--model_dir", type=str, default="../../result")
+    parser.add_argument("--output_dir", type=str, default="../../predictions")
     parser.add_argument("--eval_batch_size", type=int, default=32)
-    parser.add_argument("--model_name", type=str, default="SOMDST/model-17.bin")
+    parser.add_argument("--model_number", type=str, default=16)
+    parser.add_argument("--architecture", type=str, default="SOMDST_KOELECTRA")
 
     args = parser.parse_args()
+    args.model_name = args.architecture+f'/model-{args.model_number}.bin'
     # args.data_dir = os.environ["SM_CHANNEL_EVAL"]
     # args.model_dir = os.environ['SM_CHANNEL_MODEL']
     # args.output_dir = os.environ["SM_OUTPUT_DATA_DIR"]
     args.model_dir = os.path.join(args.model_dir, args.model_name)
     args.output_dir = os.path.join(args.output_dir, args.model_name.split("/")[0])
+    print(args.output_dir)
     model_dir_path = os.path.dirname(args.model_dir)
-    eval_data = json.load(open(f"{args.data_dir}/eval_dials.json", "r",))
-    config = json.load(open(f"{model_dir_path}/exp_config.json", "r"))
+    eval_data = json.load(open(f"{args.data_dir}/eval_dials.json",  'rt', encoding='UTF8'))
+    config = json.load(open(f"{model_dir_path}/exp_config.json",  'rt', encoding='UTF8'))
     config = argparse.Namespace(**config)
-    slot_meta = json.load(open(f"{model_dir_path}/slot_meta.json", "r"))
+    slot_meta = json.load(open(f"{model_dir_path}/slot_meta.json",  'rt', encoding='UTF8'))
 
     tokenizer = BertTokenizer.from_pretrained(config.model_name_or_path)
     added_token_num = tokenizer.add_special_tokens(
@@ -136,7 +146,7 @@ if __name__ == "__main__":
         os.mkdir(args.output_dir)
     json.dump(
         predictions,
-        open(f"{args.output_dir}/predictions.csv", "w"),
+        open(f"{args.output_dir}/predictions_{args.architecture}_{args.model_number}.csv", "w", encoding='UTF8'),
         indent=2,
         ensure_ascii=False,
     )
