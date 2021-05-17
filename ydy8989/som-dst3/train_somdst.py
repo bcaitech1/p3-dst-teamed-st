@@ -49,7 +49,7 @@ if __name__ == "__main__":
     # wandb.init(project="Stage2-DST")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_name", type=str, default="SOMDST")
+    parser.add_argument("--run_name", type=str, default="SOMDST_whole")
 
     parser.add_argument(
         "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
@@ -90,7 +90,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--teacher_forcing_ratio", type=float, default=0.5)
     args = parser.parse_args()
-
+    args.arch_name = args.model_name_or_path.split('/')[1].split('-')[0]
+    print(args.arch_name)
     # args.data_dir = os.environ["SM_CHANNEL_TRAIN"]
     if args.model_name:
         args.model_dir = os.path.join(args.model_dir, args.model_name)
@@ -117,31 +118,37 @@ if __name__ == "__main__":
     # args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
     train_data_file = f"{args.data_dir}/train_dials.json"
     train_data, dev_data, dev_labels = load_dataset(train_data_file)
+    print(len(train_data))
+    print(len(dev_data))
+    # asdfasdf
     train_examples = get_examples_from_dialogues(
         train_data, user_first=False, dialogue_level=False
     )
     dev_examples = get_examples_from_dialogues(
         dev_data, user_first=False, dialogue_level=False
     )
-    if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features6.pkl")):
+    print(len(train_examples))
+    print(len(dev_examples))
+    # asdfasdf
+    if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features_new.pkl")):
         print("Cached Input Features not Found.\nLoad data and save.")
 
         # Extracting Featrues
         train_features = processor.convert_examples_to_features(train_examples)
         print("Save Data")
-        with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features_new.pkl"), "wb") as f:
             pickle.dump(train_features, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples_new.pkl"), "wb") as f:
             pickle.dump(dev_examples, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels_new.pkl"), "wb") as f:
             pickle.dump(dev_labels, f)
     else:
         print("Cached Input Features Found.\nLoad data from Cached")
-        with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features_new.pkl"), "rb") as f:
             train_features = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples_new.pkl"), "rb") as f:
             dev_examples = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels_new.pkl"), "rb") as f:
             dev_labels = pickle.load(f)
 
     # Model 선언
@@ -284,6 +291,7 @@ if __name__ == "__main__":
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
         for k, v in eval_result.items():
             print(f"{k}: {v}")
+            logger.add_scalar(f"{k}", v, epoch)
             # wandb.log({k: v})
         if best_score < eval_result["joint_goal_accuracy"]:
             print("Update Best checkpoint!")
