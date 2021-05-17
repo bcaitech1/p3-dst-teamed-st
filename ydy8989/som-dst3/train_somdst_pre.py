@@ -6,22 +6,23 @@ import pickle
 import glob
 from pathlib import Path
 import re
-
+from torch.utils.tensorboard import SummaryWriter
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
 from transformers import AdamW, BertTokenizer, get_linear_schedule_with_warmup
-
+from pytorch_transformers import WarmupLinearSchedule
 from data_utils import WOSDataset, get_examples_from_dialogues, load_dataset, set_seed
 from eval_utils import DSTEvaluator
 from evaluation import _evaluation
 from inference_somdst import inference
-from models import SOMDST, masked_cross_entropy_for_value
+from models import SOMDST_pre,  masked_cross_entropy_for_value
 from preprocessor import SOMDSTPreprocessor
 
 import torch.cuda.amp as amp
-import wandb
+# import wandb
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -43,21 +44,21 @@ def increment_path(path, exist_ok=False):
         n = max(i) + 1 if i else 2
         return f"{path}{n}"
 
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 if __name__ == "__main__":
-    wandb.init(project="Stage2-DST")
+    # wandb.init(project="Stage2-DST")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_name", type=str, default="SOMDST")
-    parser.add_argument("--n_op", type=int, default=6)
-    parser.add_argument("--n_domain", type=int, default=15)
+    parser.add_argument("--run_name", type=str, default="SOMDST_pre")
 
     parser.add_argument(
-        "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
+        "--data_dir", type=str,
+        default="/opt/ml/input/data/train_dataset",
+        # default="../../input/data/train_dataset",
     )
-
-    parser.add_argument("--output_dir", type=str, default="/opt/ml/predictions")
-
     parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
     parser.add_argument("--model_name", type=str, default="")
     parser.add_argument("--ckpt", type=int, default=0)
@@ -66,7 +67,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--adam_epsilon", type=float, default=1e-4)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
-    parser.add_argument("--num_train_epochs", type=int, default=30)
+    parser.add_argument("--num_train_epochs", type=int, default=50)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
     parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--max_seq_length", type=int, default=512)
@@ -74,7 +75,8 @@ if __name__ == "__main__":
         "--model_name_or_path",
         type=str,
         help="Subword Vocab만을 위한 huggingface model",
-        default="dsksd/bert-ko-small-minimal",
+        # default="dsksd/bert-ko-small-minimal",
+        default = 'BonjinKim/dst_kor_bert'
     )
 
     # Model Specific Argument
@@ -100,26 +102,30 @@ if __name__ == "__main__":
         args.model_dir = os.path.join(args.model_dir, args.model_name)
     else:
         args.model_dir = increment_path(os.path.join(args.model_dir, args.run_name))
-    args.output_dir = increment_path(os.path.join(args.output_dir, args.run_name))
-    print(args.model_dir, args.output_dir)
-    wandb.config.update(args)
-    wandb.run.name = f"{args.run_name}-{wandb.run.id}"
-    wandb.run.save()
+    print(args.model_dir)
+    # wandb.config.update(args)
+    # wandb.run.name = f"{args.run_name}-{wandb.run.id}"
+    # wandb.run.save()
     # random seed 고정
     set_seed(args.random_seed)
 
     # Data Loading
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))
+    # slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json", 'rt', encoding='UTF8'))
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
     added_token_num = tokenizer.add_special_tokens(
         {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
     )
     # Define Preprocessor
     processor = SOMDSTPreprocessor(
-        slot_meta, tokenizer, max_seq_length=args.max_seq_length, n_op=args.n_op
+        slot_meta, tokenizer, max_seq_length=args.max_seq_length
     )
     args.vocab_size = tokenizer.vocab_size + added_token_num
-    # args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
+    args.n_gate = len(processor.op2id)  # gating 갯수 none, dontcare, ptr
+    args.hidden_act = 'gelu'
+    args.layer_norm_eps = 1e-12
+    args.model_name_or_path = 'BonjinKim/dst_kor_bert'
+
     train_data_file = f"{args.data_dir}/train_dials.json"
     train_data, dev_data, dev_labels = load_dataset(train_data_file)
     train_examples = get_examples_from_dialogues(
@@ -129,75 +135,29 @@ if __name__ == "__main__":
         dev_data, user_first=False, dialogue_level=False
     )
 
-    eval_data = json.load(open(f"/opt/ml/input/data/eval_dataset/eval_dials.json", "r"))
-    eval_examples = get_examples_from_dialogues(
-        eval_data, user_first=False, dialogue_level=False
-    )
-
-    if not os.path.exists(
-        os.path.join(
-            args.data_dir,
-            f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_features.pkl",
-        )
-    ):
+    if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features6.pkl")):
         print("Cached Input Features not Found.\nLoad data and save.")
 
         # Extracting Featrues
         train_features = processor.convert_examples_to_features(train_examples)
         print("Save Data")
-        with open(
-            os.path.join(
-                args.data_dir,
-                f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_features.pkl",
-            ),
-            "wb",
-        ) as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "wb") as f:
             pickle.dump(train_features, f)
-        with open(
-            os.path.join(
-                args.data_dir,
-                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_examples.pkl",
-            ),
-            "wb",
-        ) as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "wb") as f:
             pickle.dump(dev_examples, f)
-        with open(
-            os.path.join(
-                args.data_dir,
-                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_labels.pkl",
-            ),
-            "wb",
-        ) as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "wb") as f:
             pickle.dump(dev_labels, f)
     else:
         print("Cached Input Features Found.\nLoad data from Cached")
-        with open(
-            os.path.join(
-                args.data_dir,
-                f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_features.pkl",
-            ),
-            "rb",
-        ) as f:
+        with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "rb") as f:
             train_features = pickle.load(f)
-        with open(
-            os.path.join(
-                args.data_dir,
-                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_examples.pkl",
-            ),
-            "rb",
-        ) as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "rb") as f:
             dev_examples = pickle.load(f)
-        with open(
-            os.path.join(
-                args.data_dir,
-                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_labels.pkl",
-            ),
-            "rb",
-        ) as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "rb") as f:
             dev_labels = pickle.load(f)
 
     # Model 선언
-    model = SOMDST(args, args.n_domain, args.n_op, processor.op2id["update"])
+    model = SOMDST_pre(args, 5, 6, processor.op2id["update"])
 
     if args.model_name:
         print("Checkpoint Load")
@@ -205,7 +165,7 @@ if __name__ == "__main__":
         model.load_state_dict(ckpt)
 
     # model.set_subword_embedding(args.model_name_or_path)  # Subword Embedding 초기화
-    wandb.watch(model)
+    # wandb.watch(model)
     # print(f"Subword Embeddings is loaded from {args.model_name_or_path}")
     model.to(device)
     print("Model is initialized")
@@ -220,22 +180,75 @@ if __name__ == "__main__":
         num_workers=4,
     )
     print("# train:", len(train_data))
-
     print("# dev:", len(dev_examples))
 
     # Optimizer 및 Scheduler 선언
     n_epochs = args.num_train_epochs
     t_total = len(train_loader) * n_epochs
-    warmup_steps = int(t_total * args.warmup_ratio)
+    # warmup_steps = int(t_total * args.warmup_ratio)
+    num_train_steps = int(len(train_data) / args.train_batch_size * n_epochs)
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, eps=args.adam_epsilon)
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=0 if args.model_name else warmup_steps,
-        num_training_steps=t_total,
-    )
+    # scheduler = get_linear_schedule_with_warmup(
+    #     optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
+    # )
+    scheduler = WarmupLinearSchedule(optimizer, int(num_train_steps * 0.1),
+                                         t_total=num_train_steps)
 
     loss_fnc_1 = masked_cross_entropy_for_value  # generation
     loss_fnc_2 = nn.CrossEntropyLoss()  # gating
+    loss_fnc_pretrain = nn.CrossEntropyLoss()
+
+    #########
+    MLM_PRE = True
+
+    n_pretrain_epochs = 2
+    def mlm_pretrain(loader, n_epochs):
+        model.train()
+        for step, batch in enumerate(loader):
+            batch = [
+                b.to(device)
+                if not isinstance(b, int) and not isinstance(b, list)
+                else b
+                for b in batch
+            ]
+            (
+                input_ids,
+                input_masks,
+                segment_ids,
+                slot_position_ids,
+                gating_ids,
+                domain_ids,
+                target_ids,
+                max_update,
+                max_value,
+                guids,
+            ) = batch
+            # input_ids, segment_ids, input_masks, gating_ids, target_ids, guids = [
+            #     b.to(device) if not isinstance(b, list) else b for b in batch]
+            #
+            logits, labels = model.forward_pretrain(input_ids,
+                                                    segment_ids,
+                                                    slot_position_ids,
+                                                    input_masks,
+                                                    tokenizer)
+            # print(logits.shape, logits.view(-1, args.vocab_size).shape)
+            # print(labels.shape, labels.view(-1).shape)
+
+            loss = loss_fnc_pretrain(logits.view(-1, args.vocab_size), labels.view(-1))
+            #
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            optimizer.zero_grad()
+            #
+            if step % 100 == 0:
+                print('[%d/%d] [%d/%d] %f' % (epoch, n_epochs, step, len(loader), loss.item()))
+            #
+
+    if MLM_PRE:
+        for epoch in range(n_pretrain_epochs):
+            mlm_pretrain(train_loader, n_pretrain_epochs)
+
 
     if not os.path.exists(args.model_dir):
         os.mkdir(args.model_dir)
@@ -252,12 +265,13 @@ if __name__ == "__main__":
         indent=2,
         ensure_ascii=False,
     )
-
+    logger = SummaryWriter(log_dir=args.model_dir)
     best_score, best_checkpoint = 0, 0
-    for epoch in tqdm(range(n_epochs)):
-
+    MLM_DURING = True
+    for epoch in range(n_epochs):
+        batch_loss = []
         model.train()
-        for step, batch in enumerate(tqdm(train_loader)):
+        for step, batch in enumerate(train_loader):
             batch = [
                 b.to(device)
                 if not isinstance(b, int) and not isinstance(b, list)
@@ -307,13 +321,12 @@ if __name__ == "__main__":
 
                 # gating loss
                 loss_2 = loss_fnc_2(
-                    state_scores.contiguous().view(-1, args.n_op),
+                    state_scores.contiguous().view(-1, 6),
                     gating_ids.contiguous().view(-1),
                 )
-                loss_3 = loss_fnc_2(
-                    domain_scores.view(-1, args.n_domain), domain_ids.view(-1)
-                )
+                loss_3 = loss_fnc_2(domain_scores.view(-1, 5), domain_ids.view(-1))
                 loss = loss_1 + loss_2 + loss_3
+                batch_loss.append(loss.item())
 
                 loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
@@ -321,40 +334,31 @@ if __name__ == "__main__":
             scheduler.step()
             optimizer.zero_grad()
 
-            if step % 100 == 0:
-                print(
-                    f"[{epoch + args.ckpt}/{n_epochs + args.ckpt}] [{step}/{len(train_loader)}] loss: {loss.item()} gen: {loss_1.item()} gate: {loss_2.item()}, domain: {loss_3.item()}"
-                )
-                wandb.log(
-                    {
-                        "loss": loss.item(),
-                        "gen loss": loss_1.item(),
-                        "gate loss": loss_2.item(),
-                        "domain loss": loss_3.item(),
-                    }
-                )
+            if step % 50 == 0:
+                current_lr = get_lr(optimizer)
+                print("[%d/%d] [%d/%d] mean_loss : %.3f, state_loss : %.3f, gen_loss : %.3f, dom_loss : %.3f" \
+                      % (epoch + 1, n_epochs, step,
+                         len(train_loader), np.mean(batch_loss),
+                         loss_1.item(), loss_2.item(), loss_3.item()))
+                logger.add_scalar("Train/loss", loss, epoch * len(train_loader) + step)
+                logger.add_scalar("Train/gen_loss", loss_1, epoch * len(train_loader) + step)
+                logger.add_scalar("Train/gating_loss", loss_2, epoch * len(train_loader) + step)
+                logger.add_scalar("Train/domain_loss", loss_3, epoch * len(train_loader) + step)
+                logger.add_scalar("Train/Learning_rate", current_lr, epoch * len(train_loader) + step)
+                batch_loss = []
+        if MLM_DURING:
+            mlm_pretrain(train_loader, n_epochs)
 
         predictions = inference(model, dev_examples, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
         for k, v in eval_result.items():
             print(f"{k}: {v}")
-            wandb.log({k: v})
+            logger.add_scalar(f"{k}", v, epoch)
+            # wandb.log({k: v})
         if best_score < eval_result["joint_goal_accuracy"]:
             print("Update Best checkpoint!")
             best_score = eval_result["joint_goal_accuracy"]
-            best_checkpoint = epoch + args.ckpt
-            if best_score > 0.8:
-                predictions = inference(model, eval_examples, processor, device)
-                if not os.path.exists(args.output_dir):
-                    os.mkdir(args.output_dir)
-                json.dump(
-                    predictions,
-                    open(
-                        f"{args.output_dir}/{best_checkpoint}_{best_score:.4f}.csv", "w"
-                    ),
-                    indent=2,
-                    ensure_ascii=False,
-                )
+        best_checkpoint = epoch + args.ckpt
 
         torch.save(
             model.state_dict(), f"{args.model_dir}/model-{epoch + args.ckpt}.bin"

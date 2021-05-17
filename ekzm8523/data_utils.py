@@ -31,20 +31,6 @@ class OpenVocabDSTFeature:
 
 
 @dataclass
-class CoCoGenInputExample:
-    guid: str
-    system_utter: str
-    turn_state: List[str]
-    user_utter: str
-
-
-@dataclass
-class CoCoGenInputFeature:
-    input_id: List[int]
-    target_id: List[int]
-
-
-@dataclass
 class args:
     data_dir = None
     model_dir = None

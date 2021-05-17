@@ -134,6 +134,12 @@ class TRADEPreprocessor(DSTPreprocessor):
         return input_ids, segment_ids, input_masks, gating_ids, target_ids, guids
 
 
+OP2ID = {
+    4: {"delete": 0, "update": 1, "dontcare": 2, "carryover": 3},
+    6: {"delete": 0, "update": 1, "dontcare": 2, "carryover": 3, "yes": 4, "no": 5},
+}
+
+
 class SOMDSTPreprocessor(DSTPreprocessor):
     def __init__(
         self,
@@ -142,20 +148,40 @@ class SOMDSTPreprocessor(DSTPreprocessor):
         trg_tokenizer=None,
         ontology=None,
         max_seq_length=512,
+        n_op=4,
     ):
         self.slot_meta = slot_meta
         self.src_tokenizer = src_tokenizer
         self.trg_tokenizer = trg_tokenizer if trg_tokenizer else src_tokenizer
         self.ontology = ontology
-        self.op2id = {"delete": 0, "update": 1, "dontcare": 2, "carryover": 3}
+        self.op2id = OP2ID[n_op]
         self.id2op = {v: k for k, v in self.op2id.items()}
-        self.domain2id = {"관광": 0, "숙소": 1, "식당": 2, "지하철": 3, "택시": 4}
+        # self.domain2id = {"관광": 0, "숙소": 1, "식당": 2, "지하철": 3, "택시": 4}
+        self.domain2id = {
+            "관광": 0,
+            "숙소": 1,
+            "식당": 2,
+            "지하철": 3,
+            "택시": 4,
+            "관광, 숙소": 5,
+            "관광, 식당": 6,
+            "관광, 지하철": 7,
+            "관광, 택시": 8,
+            "숙소, 식당": 9,
+            "숙소, 지하철": 10,
+            "숙소, 택시": 11,
+            "식당, 지하철": 12,
+            "식당, 택시": 13,
+            "None": 14,
+        }
+
         self.id2domain = {v: k for k, v in self.domain2id.items()}
         self.prev_example = None
         self.prev_state = {}
         self.prev_domain_id = None
         self.slot_id = self.src_tokenizer.convert_tokens_to_ids("[SLOT]")
         self.max_seq_length = max_seq_length
+        self.n_op = n_op
 
     def _convert_example_to_feature(self, example):
         if not example.context_turns:
@@ -183,6 +209,10 @@ class SOMDSTPreprocessor(DSTPreprocessor):
                 operation = self.op2id["delete"]
             elif value == "doncare":
                 operation = self.op2id["dontcare"]
+            elif "yes" in self.op2id and value == "yes":
+                operation = self.op2id["yes"]
+            elif "no" in self.op2id and value == "no":
+                operation = self.op2id["no"]
             else:
                 operation = self.op2id["update"]
                 target_id = self.trg_tokenizer.encode(
@@ -213,16 +243,20 @@ class SOMDSTPreprocessor(DSTPreprocessor):
         if not self.prev_example:
             domain_slot = list(state.keys())
             if domain_slot:
-                domain_id = self.domain2id[domain_slot[0].split("-")[0]]
+                # domain_id = self.domain2id[domain_slot[0].split("-")[0]]
+                doms = ", ".join(sorted(set([d.split("-")[0] for d in domain_slot])))
+                domain_id = self.domain2id[doms]
             else:
-                domain_id = self.prev_domain_id
+                domain_id = self.domain2id["None"]
         else:
-            diff_state = set(example.label) - set(self.prev_example.label)
+            update_state = set(example.label) - set(self.prev_example.label)
+            delete_state = set(self.prev_example.label) - set(example.label)
+            diff_state = update_state | delete_state
             if not diff_state:
-                domain_id = self.prev_domain_id
+                domain_id = self.domain2id["None"]
             else:
-                domain_id = self.domain2id[list(diff_state)[0].split("-")[0]]
-
+                doms = ", ".join(sorted(set([d.split("-")[0] for d in diff_state])))
+                domain_id = self.domain2id[doms]
         self.prev_example = example
         self.prev_state = state
         self.prev_domain_id = domain_id
@@ -250,8 +284,14 @@ class SOMDSTPreprocessor(DSTPreprocessor):
         for slot, op in zip(self.slot_meta, pred_ops):
             if op == "dontcare":
                 self.prev_state[slot] = "dontcare"
-            elif op == "delete":
+            elif op == "delete" and slot in self.prev_state:
                 self.prev_state.pop(slot)
+            elif "yes" in self.op2id and op == "yes":
+                self.prev_state[slot] = "yes"
+                recovered.append(f"{slot}-yes")
+            elif "no" in self.op2id and op == "no":
+                self.prev_state[slot] = "no"
+                recovered.append(f"{slot}-no")
             elif op == "update":
                 tokens = self.trg_tokenizer.convert_ids_to_tokens(gen_list[gid])
                 gen = []
