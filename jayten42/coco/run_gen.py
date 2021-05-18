@@ -224,5 +224,6 @@ if __name__ == "__main__":
             device,
             slot_comb_dict,
         )
+        augmented.append(new_dialogue)
     with open("new_train.json", "w") as f:
-        json.dump(new_dialogue, f)
+        json.dump(augmented, f)

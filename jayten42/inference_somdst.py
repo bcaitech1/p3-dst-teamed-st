@@ -21,7 +21,7 @@ def postprocess_state(state):
             s.replace(" : ", ":")
             .replace(" = ", "=")
             .replace(" & ", "&")
-            .replace(" () ", " (")
+            .replace(" ( ", " (")
             .replace(" ) ", ")")
         )
         state[i] = s.replace(" , ", ", ")
