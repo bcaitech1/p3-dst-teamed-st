@@ -204,7 +204,7 @@ if __name__ == "__main__":
 
     processor = CoCoClassifierPreprocessor(slot_meta, cls_tokenizer, bert_config)
 
-    with open("/opt/ml/p3-dst-teamed-st/jayten42/coco/slot_comb_dict.pkl", "rb") as f:
+    with open("slot_comb_dict.pkl", "rb") as f:
         slot_comb_dict = pickle.load(f)
     augmented = []
     for dialogue in tqdm(coco_examples):
@@ -219,5 +219,6 @@ if __name__ == "__main__":
             device,
             slot_comb_dict,
         )
+        augmented.append(new_dialogue)
     with open("new_train.json", "w") as f:
-        json.dump(new_dialogue, f)
+        json.dump(augmented, f)
