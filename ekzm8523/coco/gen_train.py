@@ -7,7 +7,7 @@ from transformers import AdamW, get_linear_schedule_with_warmup
 from transformers import BartForConditionalGeneration
 from transformers import PreTrainedTokenizerFast
 from data_utils import *
-from preprocessor import CoCogenPreprocessor
+from preprocessor import CoCoPreprocessor
 
 def train_generation_model(model_path, data_path):
 
@@ -15,14 +15,15 @@ def train_generation_model(model_path, data_path):
     tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
     data = json.load(open(data_path))
 
-    processor = CoCogenPreprocessor(tokenizer)
+    processor = CoCoPreprocessor(tokenizer)
+
     examples = []
     for dialogue in tqdm(data):
         examples.extend(get_coco_examples_from_dialogue(dialogue))
 
     features = []
     for example in tqdm(examples):
-        features.append(processor.convert_example_to_feature(example, tokenizer))
+        features.append(processor.gen_convert_example_to_feature(example, tokenizer))
 
 
 
