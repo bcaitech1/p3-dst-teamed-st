@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import CosineEmbeddingLoss, CrossEntropyLoss
 from transformers import BertModel, BertPreTrainedModel, BertConfig
+
 from transformers.modeling_bert import BertOnlyMLMHead
 
 
@@ -219,7 +220,7 @@ class TRADE(nn.Module):
 
 class SlotGenerator(nn.Module):
     def __init__(
-            self, vocab_size, hidden_size, dropout, n_gate, config, proj_dim=None, pad_idx=0
+            self, vocab_size, hidden_size, dropout, n_gate, proj_dim=None, pad_idx=0
     ):
         super(SlotGenerator, self).__init__()
         self.pad_idx = pad_idx
@@ -234,11 +235,9 @@ class SlotGenerator(nn.Module):
             self.proj_layer = None
         self.hidden_size = proj_dim if proj_dim else hidden_size
 
-        self.gru = BertModel.from_pretrained(config)
-
-        # self.gru = nn.GRU(
-        #     self.hidden_size, self.hidden_size, 1, dropout=dropout, batch_first=True
-        # )
+        self.gru = nn.GRU(
+            self.hidden_size, self.hidden_size, 1, dropout=dropout, batch_first=True
+        )
         self.n_gate = n_gate
         self.dropout = nn.Dropout(dropout)
         self.w_gen = nn.Linear(self.hidden_size * 3, 1)

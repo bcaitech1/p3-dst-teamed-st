@@ -20,7 +20,7 @@ from evaluation import _evaluation
 from inference_somdst import inference
 from models import SOMDST, masked_cross_entropy_for_value
 from preprocessor import SOMDSTPreprocessor
-
+from torch.optim.lr_scheduler import *
 import torch.cuda.amp as amp
 # import wandb
 
@@ -43,6 +43,9 @@ def increment_path(path, exist_ok=False):
         i = [int(m.groups()[0]) for m in matches if m]
         n = max(i) + 1 if i else 2
         return f"{path}{n}"
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 
 if __name__ == "__main__":
@@ -55,14 +58,14 @@ if __name__ == "__main__":
         "--data_dir", type=str, default="/opt/ml/input/data/train_dataset"
     )
     parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
-    parser.add_argument("--model_name", type=str, default="")
-    parser.add_argument("--ckpt", type=int, default=0)
+    parser.add_argument("--model_name", type=str, default="SOMDST_whole")
+    parser.add_argument("--ckpt", type=int, default=21)
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--eval_batch_size", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--adam_epsilon", type=float, default=1e-4)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
-    parser.add_argument("--num_train_epochs", type=int, default=50)
+    parser.add_argument("--num_train_epochs", type=int, default=55)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
     parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--max_seq_length", type=int, default=512)
@@ -183,13 +186,13 @@ if __name__ == "__main__":
     t_total = len(train_loader) * n_epochs
     # warmup_steps = int(t_total * args.warmup_ratio)
     num_train_steps = int(len(train_data) / args.train_batch_size * n_epochs)
-    optimizer = AdamW(model.parameters(), lr=args.learning_rate, eps=args.adam_epsilon)
+    optimizer = AdamW(model.parameters(), lr=0.00004, eps=args.adam_epsilon)#args.learning_rate
     # scheduler = get_linear_schedule_with_warmup(
     #     optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
     # )
-    scheduler = WarmupLinearSchedule(optimizer, int(num_train_steps * 0.1),
-                                         t_total=num_train_steps)
-
+    # scheduler = WarmupLinearSchedule(optimizer, int(num_train_steps * 0.1),
+    #                                      t_total=num_train_steps)
+    scheduler = StepLR(optimizer, 1, gamma=0.999977)  # 794) #gamma : 20epoch => lr x 0.01
     loss_fnc_1 = masked_cross_entropy_for_value  # generation
     loss_fnc_2 = nn.CrossEntropyLoss()  # gating
 
@@ -277,15 +280,17 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             if step % 50 == 0:
-
-                print("[%d/%d] [%d/%d] mean_loss : %.3f, state_loss : %.3f, gen_loss : %.3f, dom_loss : %.3f" \
+                current_lr = get_lr(optimizer)
+                print("[%d/%d] [%d/%d] mean_loss : %.3f, state_loss : %.3f, gen_loss : %.3f, dom_loss : %.3f, lr : %.7f" \
                       % (epoch + 1, n_epochs, step,
                          len(train_loader), np.mean(batch_loss),
-                         loss_1.item(), loss_2.item(), loss_3.item()))
+                         loss_1.item(), loss_2.item(), loss_3.item(), current_lr))
                 logger.add_scalar("Train/loss", loss, epoch * len(train_loader) + step)
                 logger.add_scalar("Train/gen_loss", loss_1, epoch * len(train_loader) + step)
                 logger.add_scalar("Train/gating_loss", loss_2, epoch * len(train_loader) + step)
                 logger.add_scalar("Train/domain_loss", loss_3, epoch * len(train_loader) + step)
+                logger.add_scalar("Train/Learning_rate", current_lr, epoch * len(train_loader) + step)
+
                 batch_loss = []
         predictions = inference(model, dev_examples, processor, device)
         eval_result = _evaluation(predictions, dev_labels, slot_meta)
