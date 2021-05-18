@@ -157,36 +157,34 @@ def get_augmented_dialogue(
 if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    gen_model_path = "../../model/gen_model.bin"
+    gen_model_path = "/opt/ml/model/gen_model.bin"
     gen_model_name = "hyunwoongko/kobart"
     gen_model = BartForConditionalGeneration.from_pretrained(gen_model_name)
     gen_tokenizer = PreTrainedTokenizerFast.from_pretrained(gen_model_name)
-    ckpt = torch.load("../../model/gen_model.bin")
+    ckpt = torch.load("/opt/ml/model/gen_model.bin")
     gen_model.load_state_dict(ckpt)
     gen_model.to(device)
 
-    cls_model_path = "/../../model/cls_model.bin"
+    cls_model_path = "/opt/ml/model/cls_model.bin"
     cls_model_name = "dsksd/bert-ko-small-minimal"
-    data = json.load(open('../../input/data/train_dataset/train_dials.json','rt',encoding='UTF8'))
+    data = json.load(open('/opt/ml/input/data/train_dataset/train_dials.json'))
 
-    slot_meta = json.load(open('../../input/data/train_dataset/slot_meta.json','rt',encoding='UTF8'))
+    slot_meta = json.load(open('/opt/ml/input/data/train_dataset/slot_meta.json'))
     cls_tokenizer = BertTokenizer.from_pretrained(cls_model_name)
     bert_config = BertConfig.from_pretrained(cls_model_name, num_labels=len(slot_meta))
     bert_config.model_name_or_path = cls_model_name
     bert_config.num_labels = len(slot_meta)
     cls_model = BertForMultiLabelSequenceClassification.from_pretrained(cls_model_name, config=bert_config)
-    ckpt = torch.load("../../model/cls_model.bin")
+    ckpt = torch.load("/opt/ml/model/cls_model.bin")
     cls_model.load_state_dict(ckpt)
     cls_model.to(device)
 
     coco_examples = get_coco_examples_from_dialogues(data, dialogue_level=True)
 
-    slot2idx = {slot: i for i, slot in enumerate(slot_meta)}
-    idx2slot = {i: slot for i, slot in enumerate(slot_meta)}
     processor = CoCoPreprocessor(slot_meta, gen_tokenizer, cls_tokenizer, bert_config)
 
 
-    slot_value_dict = json.load(open('../../input/data/train_dataset/ontology.json','rt',encoding='UTF8'))
+    slot_value_dict = json.load(open('/opt/ml/input/data/train_dataset/ontology.json'))
     with open("coco_data/slot_comb_dict.pkl", "rb") as f:
         slot_comb_dict = pickle.load(f)
 
@@ -202,5 +200,5 @@ if __name__ == "__main__":
             slot_comb_dict,
         )
         augmented.append(new_dialogue)
-    with open("new_train.json", "w",encoding='UTF8') as f:
+    with open("new_train.json", "w") as f:
         json.dump(augmented, f)

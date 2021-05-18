@@ -13,7 +13,7 @@ def train_generation_model(model_path, data_path):
 
     model = BartForConditionalGeneration.from_pretrained(model_path)
     tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
-    data = json.load(open(data_path,'rt',encoding='UTF8'))
+    data = json.load(open(data_path))
 
     processor = CoCoPreprocessor(tokenizer)
 
@@ -84,14 +84,14 @@ def train_generation_model(model_path, data_path):
             if step % 100 == 0:
                 print(f"[{epoch}/{num_train_epochs}][{step}/{len(train_loader)}] {loss}")
 
-    torch.save(model.state_dict(), "../../model/coco.bin")
+    torch.save(model.state_dict(), "/opt/ml/model/coco.bin")
 
 
 
 
 if __name__ == "__main__":
     model_path = "hyunwoongko/kobart"
-    data_path = '../../input/data/train_dataset/train_dials.json'
+    data_path = '/opt/ml/input/data/train_dataset/train_dials.json'
 
     train_generation_model(model_path, data_path)
 
