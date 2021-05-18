@@ -181,8 +181,6 @@ if __name__ == "__main__":
 
     coco_examples = get_coco_examples_from_dialogues(data, dialogue_level=True)
 
-    slot2idx = {slot: i for i, slot in enumerate(slot_meta)}
-    idx2slot = {i: slot for i, slot in enumerate(slot_meta)}
     processor = CoCoPreprocessor(slot_meta, gen_tokenizer, cls_tokenizer, bert_config)
 
 
