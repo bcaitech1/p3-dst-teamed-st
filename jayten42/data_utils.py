@@ -48,7 +48,7 @@ def load_dataset(dataset_path, dev_split=0.1):
     if isinstance(dataset_path, list):
         data = []
         for file in dataset_path:
-            data += json.load(open(file)
+            data += json.load(open(file))
     else:
         data = json.load(open(dataset_path))
     num_data = len(data)
