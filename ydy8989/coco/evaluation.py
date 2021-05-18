@@ -6,7 +6,7 @@ import torch
 
 
 def metric(probs, labels, thresh):
-    preds = probs > thresh
+    preds = (probs > thresh)
     preds = preds.cpu().numpy() * 1
     labels = labels.byte().cpu().numpy() * 1
     return preds, labels
