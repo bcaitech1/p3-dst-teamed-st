@@ -1,30 +1,18 @@
-from data_utils import (
-    get_coco_examples_from_dialogues,
-    coco_generator,
-    convert_example_to_feature,
-    CoCoClassifierInputExample,
-    CoCoClassifierDataset,
-)
-from typing import List, Optional, Union
-
+import json
 from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
 
-from evaluation import evaluate
-import json
-import os
+from transformers import BartForConditionalGeneration, BertConfig, BertTokenizer
+from transformers import PreTrainedTokenizerFast
+from data_utils import *
+from preprocessor import CoCoPreprocessor
 import pickle
-import torch
-from tqdm import tqdm
-from copy import deepcopy
-from collections import defaultdict
-from transformers import BartForConditionalGeneration
-from transformers import PreTrainedTokenizerFast, BertConfig, BertTokenizer
+from evaluation import evaluate
 from model import BertForMultiLabelSequenceClassification
-from preprocessor import CoCoClassifierPreprocessor
+from collections import defaultdict
 
 
 def get_augmented_uttrs(
-    model, tokenizer, new_turn, slot_value_dict, slot_comb_dict, device
+    model, tokenizer, new_turn, device
 ):
     x = convert_example_to_feature(new_turn, tokenizer)
     input_id = torch.LongTensor([x.input_id]).to(device)
@@ -46,7 +34,7 @@ def get_augmented_uttrs(
     return uttrs
 
 
-def classifier_filtering(model, tokenizer, uttrs, example, device, processor):
+def classifier_filtering(model, uttrs, example, device, processor):
     filtered = []
     examples = [
         CoCoClassifierInputExample(
@@ -59,11 +47,11 @@ def classifier_filtering(model, tokenizer, uttrs, example, device, processor):
     ]
     features = []
     for example in examples:
-        features.append(processor.convert_example_to_feature(example, tokenizer))
+        features.append(processor.cls_convert_example_to_feature(example))
     data = CoCoClassifierDataset(features)
     sampler = SequentialSampler(data)
     dataloader = DataLoader(
-        data, sampler=sampler, batch_size=32, collate_fn=processor.collate_fn
+        data, sampler=sampler, batch_size=32, collate_fn=processor.cls_collate_fn
     )
     flags = evaluate(model, device, dataloader, is_query=True)
     for idx, flag in enumerate(flags):
@@ -113,7 +101,6 @@ def convert_examples_to_dialogue(examples):
     turn_state: List[str]
     user_utter: str
 
-    dialogue = {}
     dialogue_idx = "augmented-" + "-".join(examples[0].guid.split("-")[:-1])
     dialogue = []
 
@@ -138,8 +125,6 @@ def get_augmented_dialogue(
     generator,
     classifier_filter,
     processor,
-    gen_tokenizer,
-    cls_tokenizer,
     dialogue,
     slot_value_dict,
     device,
@@ -151,11 +136,11 @@ def get_augmented_dialogue(
         new_turn = coco_generator(turn, slot_value_dict, slot_comb_dict)
 
         uttrs = get_augmented_uttrs(
-            generator, gen_tokenizer, new_turn, slot_value_dict, slot_comb_dict, device
+            generator, processor.gen_tokenizer, new_turn, device
         )
 
         filter_uttrs = classifier_filtering(
-            classifier_filter, cls_tokenizer, uttrs, new_turn, device, processor
+            classifier_filter, uttrs, new_turn, device, processor
         )
         best_uttr = match_filtering(new_turn, turn, filter_uttrs)
         if best_uttr:
@@ -168,62 +153,54 @@ def get_augmented_dialogue(
     return new_dialogue
 
 
+
 if __name__ == "__main__":
-    data_dir = "/opt/ml/input/data/train_dataset"
-    model_path = "hyunwoongko/kobart"
-    # generator_ckpt = "checkpoint/generator.pth"
-    # classifier_ckpt = "checkpoint/classifier.pth"
-
-    generator_ckpt = "/opt/ml/model/gen_model.bin"
-    classifier_ckpt = "/opt/ml/model/cls_model.bin"
-
-    data = json.load(open(os.path.join(data_dir, "train_dials.json"), "r"))
-    coco_examples = get_coco_examples_from_dialogues(data, dialogue_level=True)
-
-    generator = BartForConditionalGeneration.from_pretrained(model_path)
-    gen_tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
-    cls_tokenizer = BertTokenizer.from_pretrained("dsksd/bert-ko-small-minimal")
-
-    generator_keys = generator.state_dict().keys()
-    state_dict = {
-        k: v for k, v in torch.load(generator_ckpt).items() if k in generator_keys
-    }
-
-    generator.load_state_dict(state_dict)
-    slot_meta = json.load(open("/opt/ml/input/data/train_dataset/slot_meta.json"))
-
-    bert_config = BertConfig.from_pretrained(
-        "dsksd/bert-ko-small-minimal", num_labels=len(slot_meta)
-    )
-    bert_config.model_name_or_path = "dsksd/bert-ko-small-minimal"
-    bert_config.num_labels = 45
-    classifier_filter = BertForMultiLabelSequenceClassification.from_pretrained(
-        "dsksd/bert-ko-small-minimal", config=bert_config
-    )
-    classifier_filter.load_state_dict(torch.load(classifier_ckpt))
-    slot_value_dict = json.load(open("/opt/ml/input/data/train_dataset/ontology.json"))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    generator.to(device)
-    classifier_filter.to(device)
+    gen_model_path = "../../model/gen_model.bin"
+    gen_model_name = "hyunwoongko/kobart"
+    gen_model = BartForConditionalGeneration.from_pretrained(gen_model_name)
+    gen_tokenizer = PreTrainedTokenizerFast.from_pretrained(gen_model_name)
+    ckpt = torch.load("../../model/gen_model.bin")
+    gen_model.load_state_dict(ckpt)
+    gen_model.to(device)
 
-    processor = CoCoClassifierPreprocessor(slot_meta, cls_tokenizer, bert_config)
+    cls_model_path = "/../../model/cls_model.bin"
+    cls_model_name = "dsksd/bert-ko-small-minimal"
+    data = json.load(open('../../input/data/train_dataset/train_dials.json','rt',encoding='UTF8'))
 
-    with open("slot_comb_dict.pkl", "rb") as f:
+    slot_meta = json.load(open('../../input/data/train_dataset/slot_meta.json','rt',encoding='UTF8'))
+    cls_tokenizer = BertTokenizer.from_pretrained(cls_model_name)
+    bert_config = BertConfig.from_pretrained(cls_model_name, num_labels=len(slot_meta))
+    bert_config.model_name_or_path = cls_model_name
+    bert_config.num_labels = len(slot_meta)
+    cls_model = BertForMultiLabelSequenceClassification.from_pretrained(cls_model_name, config=bert_config)
+    ckpt = torch.load("../../model/cls_model.bin")
+    cls_model.load_state_dict(ckpt)
+    cls_model.to(device)
+
+    coco_examples = get_coco_examples_from_dialogues(data, dialogue_level=True)
+
+    slot2idx = {slot: i for i, slot in enumerate(slot_meta)}
+    idx2slot = {i: slot for i, slot in enumerate(slot_meta)}
+    processor = CoCoPreprocessor(slot_meta, gen_tokenizer, cls_tokenizer, bert_config)
+
+
+    slot_value_dict = json.load(open('../../input/data/train_dataset/ontology.json','rt',encoding='UTF8'))
+    with open("coco_data/slot_comb_dict.pkl", "rb") as f:
         slot_comb_dict = pickle.load(f)
+
     augmented = []
     for dialogue in tqdm(coco_examples):
         new_dialogue = get_augmented_dialogue(
-            generator,
-            classifier_filter,
+            gen_model,
+            cls_model,
             processor,
-            gen_tokenizer,
-            cls_tokenizer,
             dialogue,
             slot_value_dict,
             device,
             slot_comb_dict,
         )
         augmented.append(new_dialogue)
-    with open("new_train.json", "w") as f:
+    with open("new_train.json", "w",encoding='UTF8') as f:
         json.dump(augmented, f)

@@ -299,3 +299,4 @@ def tokenize_ontology(ontology, tokenizer, max_seq_length=12):
         slot_values.append(torch.LongTensor(slot_value))
     return torch.LongTensor(slot_types), slot_values
 
+

@@ -88,7 +88,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_dir", type=str, default="../../result")
     parser.add_argument("--output_dir", type=str, default="../../predictions")
     parser.add_argument("--eval_batch_size", type=int, default=32)
-    parser.add_argument("--model_number", type=str, default=22)
+    parser.add_argument("--model_number", type=str, default=48)
     parser.add_argument("--architecture", type=str, default="SOMDST_whole")
 
     args = parser.parse_args()
