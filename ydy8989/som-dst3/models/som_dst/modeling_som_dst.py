@@ -241,7 +241,7 @@ class Decoder(nn.Module):
         self.vocab_size = config.vocab_size
         self.embed = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
         self.embed.weight = bert_model_embedding_weights
-        self.gru = nn.GRU(config.hidden_size, config.hidden_size, 1, batch_first=True)
+        self.gru = nn.GRU(config.hidden_size, config.hidden_size, 1, batch_first=True, bidirectional=False)
         self.w_gen = nn.Linear(config.hidden_size * 3, 1)
         self.sigmoid = nn.Sigmoid()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
