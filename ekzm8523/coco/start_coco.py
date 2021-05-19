@@ -180,11 +180,10 @@ if __name__ == "__main__":
     cls_model.to(device)
 
     coco_examples = get_coco_examples_from_dialogues(data, dialogue_level=True)
-
+    coco_examples = coco_examples[:2000]
     processor = CoCoPreprocessor(slot_meta, gen_tokenizer, cls_tokenizer, bert_config)
 
-
-    slot_value_dict = json.load(open('/opt/ml/input/data/train_dataset/ontology.json'))
+    slot_value_dict = json.load(open('/opt/ml/input/data/train_dataset/new_ontology.json'))
     with open("../somdst/somdst_data/slot_comb_dict.pkl", "rb") as f:
         slot_comb_dict = pickle.load(f)
 
