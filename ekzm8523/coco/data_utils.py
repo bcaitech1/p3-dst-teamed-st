@@ -149,7 +149,7 @@ def coco_generator(example, slot_value_dict, slot_comb_dict={}, verbose=False):
     combinations = slot_comb_dict.get(st)
     slots = [c[0] for c in combinations]
     counts = [c[1] for c in combinations]
-    weights = [c / sum(counts) for c in counts]
+    weights = [sum(counts) / c for c in counts]
     if not combinations:
         return coco
 
