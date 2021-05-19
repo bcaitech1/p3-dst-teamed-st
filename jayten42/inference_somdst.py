@@ -81,12 +81,12 @@ def inference(model, eval_examples, processor, device):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--data_dir", type=str, default="/opt/ml/input/data/eval_dataset"
+        "--data_dir", type=str, default="../input/data/eval_dataset"
     )
-    parser.add_argument("--model_dir", type=str, default="/opt/ml/result")
-    parser.add_argument("--output_dir", type=str, default="/opt/ml/predictions")
+    parser.add_argument("--model_dir", type=str, default="../result")
+    parser.add_argument("--output_dir", type=str, default="../predictions")
     parser.add_argument("--eval_batch_size", type=int, default=32)
-    parser.add_argument("--model_name", type=str, default="SOMDST2/model-7.bin")
+    parser.add_argument("--model_name", type=str, default="SOMDST2/model-134.bin")
     parser.add_argument("--n_op", type=int, default=6)
 
     args = parser.parse_args()
@@ -96,10 +96,10 @@ if __name__ == "__main__":
     args.model_dir = os.path.join(args.model_dir, args.model_name)
     args.output_dir = os.path.join(args.output_dir, args.model_name.split("/")[0])
     model_dir_path = os.path.dirname(args.model_dir)
-    eval_data = json.load(open(f"{args.data_dir}/eval_dials.json", "r"))
-    config = json.load(open(f"{model_dir_path}/exp_config.json", "r"))
+    eval_data = json.load(open(f"{args.data_dir}/eval_dials.json", "rt",encoding='UTF8'))
+    config = json.load(open(f"{model_dir_path}/exp_config.json", "rt",encoding='UTF8'))
     config = argparse.Namespace(**config)
-    slot_meta = json.load(open(f"{model_dir_path}/slot_meta.json", "r"))
+    slot_meta = json.load(open(f"{model_dir_path}/slot_meta.json", "rt",encoding='UTF8'))
 
     tokenizer = BertTokenizer.from_pretrained(config.model_name_or_path)
     added_token_num = tokenizer.add_special_tokens(
@@ -131,7 +131,7 @@ if __name__ == "__main__":
             tokenizer.encode(slot.replace("-", " "), add_special_tokens=False)
         )
 
-    model = SOMDST(config, 5, 4, processor.op2id["update"])
+    model = SOMDST(config, 15, 6, processor.op2id["update"])
 
     ckpt = torch.load(args.model_dir, map_location="cpu")
     model.load_state_dict(ckpt)

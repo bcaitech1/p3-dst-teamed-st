@@ -9,7 +9,7 @@ from transformers import BertTokenizer
 
 from data_utils import WOSDataset, get_examples_from_dialogues, convert_state_dict
 from models import SOMDST, masked_cross_entropy_for_value
-from preprocessor import SOMDSTPreprocessor
+from preprocessor_jay import SOMDSTPreprocessor
 import torch.cuda.amp as amp
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -24,10 +24,7 @@ def postprocess_state(state):
         s = s.replace(" ) ", ")")
         s = s.replace(" ( ", "(")
         s = s.replace(" & ", "&")
-        s = s.replace(" & ", "&")
-        s = s.replace(" & ", "&")
-        s = s.replace(" & ", "&")
-        s = s.replace(" & ", "&")
+
 
 
         state[i] = s.replace(" , ", ", ")
@@ -93,8 +90,8 @@ if __name__ == "__main__":
     parser.add_argument("--model_dir", type=str, default="../../result")
     parser.add_argument("--output_dir", type=str, default="../../predictions")
     parser.add_argument("--eval_batch_size", type=int, default=32)
-    parser.add_argument("--model_number", type=str, default=51)
-    parser.add_argument("--architecture", type=str, default="SOMDST_whole")
+    parser.add_argument("--model_number", type=str, default=13)
+    parser.add_argument("--architecture", type=str, default="SOMDST_coco")
 
     args = parser.parse_args()
     args.model_name = args.architecture+f'/model-{args.model_number}.bin'

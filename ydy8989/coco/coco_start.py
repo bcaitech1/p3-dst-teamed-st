@@ -202,5 +202,5 @@ if __name__ == "__main__":
             slot_comb_dict,
         )
         augmented.append(new_dialogue)
-    with open("new_train.json", "w",encoding='UTF8') as f:
+    with open("../../input/data/train_dataset/new_train.json", "w", encoding='UTF8') as f:
         json.dump(augmented, f)
