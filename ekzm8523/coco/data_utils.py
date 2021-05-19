@@ -153,8 +153,8 @@ def coco_generator(example, slot_value_dict, slot_comb_dict={}, verbose=False):
     if not combinations:
         return coco
 
-    # co_st = random.choice(combinations)
-    co_st = random.choices(slots, weights=weights)[0]
+    co_st = random.choice(slots)
+    # co_st = random.choices(slots, weights=weights)[0]
     candidates = slot_value_dict.get(co_st, [])
     co_sv = random.choice(candidates[2:])
     new_slot_value = f"{co_st}-{co_sv}"
