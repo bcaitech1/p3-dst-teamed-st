@@ -13,7 +13,6 @@
         <serverdata>
           <mappings>
             <mapping deploy="/opt/ml" local="$PROJECT_DIR$" />
-            <mapping local="" />
           </mappings>
         </serverdata>
       </paths>
