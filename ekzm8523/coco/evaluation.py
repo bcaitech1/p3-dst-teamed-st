@@ -18,12 +18,12 @@ def evaluate(model, device, eval_dataloader, thresh=0.5, is_query=False):
     preds_list, label_list = [], []
 
     for step, batch in enumerate(eval_dataloader):
-        input_ids, input_masks, segment_ids, target_ids = (b.to(device) for b in batch)
+        input_ids, input_masks, segment_ids, target_ids = (b.to(device) for b in batch) # input_masks -> input_mask
 
         input_ids = input_ids.to(device)
         input_mask = input_masks.to(device)
         segment_ids = segment_ids.to(device)
-        target_ids = target_ids.to(device)
+        target_ids = target_ids.to(device) # 여기 다 지우기 어차피 cuda임
         with torch.no_grad():
             logits = model(
                 input_ids=input_ids,

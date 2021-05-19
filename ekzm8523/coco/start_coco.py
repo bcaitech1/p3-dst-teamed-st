@@ -60,7 +60,7 @@ def classifier_filtering(model, uttrs, example, device, processor):
     return filtered
 
 
-def match_filtering(new_turn, ori_turn, sentences):
+def match_filtering(new_turn, ori_turn, sentences): # ori -> old로 네이밍 변경이 나을듯?
     ori_turn_label_set = ori_turn.turn_state
     new_turn_label_set = new_turn.turn_state
 
@@ -185,7 +185,7 @@ if __name__ == "__main__":
 
 
     slot_value_dict = json.load(open('/opt/ml/input/data/train_dataset/ontology.json'))
-    with open("coco_data/slot_comb_dict.pkl", "rb") as f:
+    with open("../somdst/somdst_data/slot_comb_dict.pkl", "rb") as f:
         slot_comb_dict = pickle.load(f)
 
     augmented = []
@@ -199,6 +199,7 @@ if __name__ == "__main__":
             device,
             slot_comb_dict,
         )
+        augmented.append(new_dialogue)
 
     with open("new_train.json", "w") as f:
-        json.dump(new_dialogue, f)
+        json.dump(augmented, f)
