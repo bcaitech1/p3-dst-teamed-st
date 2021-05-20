@@ -120,7 +120,10 @@ if __name__ == "__main__":
     )
     args.vocab_size = tokenizer.vocab_size + added_token_num
     # args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
-    train_data_file = f"{args.data_dir}/train_dials.json"
+    train_data_file = [
+        f"{args.data_dir}/train_dials.json",
+        f"{args.data_dir}/new_train.json",
+    ]
     train_data, dev_data, dev_labels = load_dataset(train_data_file)
     train_examples = get_examples_from_dialogues(
         train_data, user_first=False, dialogue_level=False
@@ -137,7 +140,7 @@ if __name__ == "__main__":
     if not os.path.exists(
         os.path.join(
             args.data_dir,
-            f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_features.pkl",
+            f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_coco_features.pkl",
         )
     ):
         print("Cached Input Features not Found.\nLoad data and save.")
@@ -148,7 +151,7 @@ if __name__ == "__main__":
         with open(
             os.path.join(
                 args.data_dir,
-                f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_features.pkl",
+                f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_coco_features.pkl",
             ),
             "wb",
         ) as f:
@@ -156,7 +159,7 @@ if __name__ == "__main__":
         with open(
             os.path.join(
                 args.data_dir,
-                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_examples.pkl",
+                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_coco_examples.pkl",
             ),
             "wb",
         ) as f:
@@ -164,7 +167,7 @@ if __name__ == "__main__":
         with open(
             os.path.join(
                 args.data_dir,
-                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_labels.pkl",
+                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_coco_labels.pkl",
             ),
             "wb",
         ) as f:
@@ -174,7 +177,7 @@ if __name__ == "__main__":
         with open(
             os.path.join(
                 args.data_dir,
-                f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_features.pkl",
+                f"train_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_coco_features.pkl",
             ),
             "rb",
         ) as f:
@@ -182,7 +185,7 @@ if __name__ == "__main__":
         with open(
             os.path.join(
                 args.data_dir,
-                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_examples.pkl",
+                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_coco_examples.pkl",
             ),
             "rb",
         ) as f:
@@ -190,7 +193,7 @@ if __name__ == "__main__":
         with open(
             os.path.join(
                 args.data_dir,
-                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_labels.pkl",
+                f"dev_somdst_n_op_{args.n_op}_n_dom_{args.n_domain}_coco_labels.pkl",
             ),
             "rb",
         ) as f:

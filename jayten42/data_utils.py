@@ -45,7 +45,12 @@ class WOSDataset(Dataset):
 
 
 def load_dataset(dataset_path, dev_split=0.1):
-    data = json.load(open(dataset_path))
+    if isinstance(dataset_path, list):
+        data = []
+        for file in dataset_path:
+            data += json.load(open(file))
+    else:
+        data = json.load(open(dataset_path))
     num_data = len(data)
     num_dev = int(num_data * dev_split)
     if not num_dev:
@@ -58,6 +63,8 @@ def load_dataset(dataset_path, dev_split=0.1):
     num_per_domain_trainsition = int(num_dev / 3)
     dev_idx = []
     for v in dom_mapper.values():
+        if len(v) < num_per_domain_trainsition:
+            continue
         idx = random.sample(v, num_per_domain_trainsition)
         dev_idx.extend(idx)
 
