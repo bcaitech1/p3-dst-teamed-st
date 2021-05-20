@@ -178,15 +178,15 @@ class BertEncoder(nn.Module):
             input_ids=input_ids,
             token_type_ids=token_type_ids,
             attention_mask=attention_mask)
-        if self.config.arch_name=='bert':
-            #bert
-            sequence_output, pooled_output = outputs[:2]
-            domain_scores = self.domain_classifier(self.dropout(pooled_output))
-        elif self.config.arch_name=='koelectra':
-            #electra
-            sequence_output = outputs[0]
-            pooled_output = self.sequence_summary(sequence_output)
-            domain_scores = self.domain_classifier(self.dropout(pooled_output))
+        # if self.config.arch_name=='bert':
+        #bert
+        sequence_output, pooled_output = outputs[:2]
+        domain_scores = self.domain_classifier(self.dropout(pooled_output))
+        # elif self.config.arch_name=='koelectra':
+        #     #electra
+        #     sequence_output = outputs[0]
+        #     pooled_output = self.sequence_summary(sequence_output)
+        #     domain_scores = self.domain_classifier(self.dropout(pooled_output))
         # state_positions: B x J
         # state_poas: B x J x H
         state_pos = state_positions[:, :, None].expand(-1, -1, sequence_output.size(-1))
