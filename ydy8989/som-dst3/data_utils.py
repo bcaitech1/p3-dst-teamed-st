@@ -50,7 +50,7 @@ def load_dataset(dataset_path, dev_split=0.1):
         for file in dataset_path:
             data += json.load(open(file,'rt',encoding='UTF8'))
     else:
-        data = json.load(open(dataset_path))
+        data = json.load(open(dataset_path,'rt',encoding='UTF8'))
     num_data = len(data)
     num_dev = int(num_data * dev_split)
     if not num_dev:

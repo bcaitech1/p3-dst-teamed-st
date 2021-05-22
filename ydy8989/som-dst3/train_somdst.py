@@ -65,7 +65,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--adam_epsilon", type=float, default=1e-4)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
-    parser.add_argument("--num_train_epochs", type=int, default=30)
+    parser.add_argument("--num_train_epochs", type=int, default=45)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
     parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--max_seq_length", type=int, default=512)
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     args.vocab_size = tokenizer.vocab_size + added_token_num
     # args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
     train_data_file = [
-                       # f"{args.data_dir}/train_dials.json",
+                       f"{args.data_dir}/train_dials.json",
                        f"{args.data_dir}/0_1500.json",
                        f"{args.data_dir}/1500_3000.json",
                        f"{args.data_dir}/3000_4400.json",
@@ -142,6 +142,26 @@ if __name__ == "__main__":
     print(len(dev_examples))
     print()
     # asdfasdf
+    # if not os.path.exists(os.path.join(args.data_dir, "train_somdst_features6.pkl")):
+    #     print("Cached Input Features not Found.\nLoad data and save.")
+    #
+    #     # Extracting Featrues
+    #     train_features = processor.convert_examples_to_features(train_examples)
+    #     print("Save Data")
+    #     with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "wb") as f:
+    #         pickle.dump(train_features, f)
+    #     with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "wb") as f:
+    #         pickle.dump(dev_examples, f)
+    #     with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "wb") as f:
+    #         pickle.dump(dev_labels, f)
+    # else:
+    #     print("Cached Input Features Found.\nLoad data from Cached")
+    #     with open(os.path.join(args.data_dir, "train_somdst_features6.pkl"), "rb") as f:
+    #         train_features = pickle.load(f)
+    #     with open(os.path.join(args.data_dir, "dev_somdst_examples6.pkl"), "rb") as f:
+    #         dev_examples = pickle.load(f)
+    #     with open(os.path.join(args.data_dir, "dev_somdst_labels6.pkl"), "rb") as f:
+    #         dev_labels = pickle.load(f)
     if not os.path.exists(os.path.join(args.data_dir, "train_somdst_fin_coco.pkl")):
         print("Cached Input Features not Found.\nLoad data and save.")
 
@@ -150,17 +170,17 @@ if __name__ == "__main__":
         print("Save Data")
         with open(os.path.join(args.data_dir, "train_somdst_fin_coco.pkl"), "wb") as f:
             pickle.dump(train_features, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_fin_coco.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples_fin_coco.pkl"), "wb") as f:
             pickle.dump(dev_examples, f)
-        with open(os.path.join(args.data_dir, "dev_somdst_fin_coco.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels_fin_coco.pkl"), "wb") as f:
             pickle.dump(dev_labels, f)
     else:
         print("Cached Input Features Found.\nLoad data from Cached")
         with open(os.path.join(args.data_dir, "train_somdst_fin_coco.pkl"), "rb") as f:
             train_features = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_fin_coco.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_examples_fin_coco.pkl"), "rb") as f:
             dev_examples = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_somdst_fin_coco.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_somdst_labels_fin_coco.pkl"), "rb") as f:
             dev_labels = pickle.load(f)
 
     # Model 선언
@@ -195,7 +215,7 @@ if __name__ == "__main__":
     t_total = len(train_loader) * n_epochs
     # warmup_steps = int(t_total * args.warmup_ratio)
     num_train_steps = int(len(train_data) / args.train_batch_size * n_epochs)
-    optimizer = AdamW(model.parameters(), lr=4.44e-6, eps=args.adam_epsilon)#args.learning_rate
+    optimizer = AdamW(model.parameters(), lr=8.2e-5, eps=args.adam_epsilon)#args.learning_rate
     # scheduler = get_linear_schedule_with_warmup(
     #     optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
     # )

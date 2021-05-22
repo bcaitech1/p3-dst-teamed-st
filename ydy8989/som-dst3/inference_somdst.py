@@ -27,7 +27,9 @@ def inference(model, eval_examples, processor, device):
     model.eval()
     predictions = {}
     last_states = {}
+
     for example in tqdm(eval_examples):
+        # print(example)
         if not example.context_turns:
             last_states = {}
         # example.prev_state = last_states
