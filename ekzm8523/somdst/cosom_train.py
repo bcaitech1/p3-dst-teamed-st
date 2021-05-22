@@ -1,3 +1,7 @@
+"""
+이 파일은 coco를 포함한 som-dst를 돌리는 train.py 입니다.
+"""
+
 import argparse
 import json
 import os
@@ -107,19 +111,19 @@ if __name__ == "__main__":
     args.vocab_size = tokenizer.vocab_size + added_token_num
     # args.n_gate = len(processor.gating2id)  # gating 갯수 none, dontcare, ptr
 
-    if not os.path.exists(os.path.join(args.data_dir, "train_cosom_features.pkl")):
+    if not os.path.exists(os.path.join(args.data_dir, "train_cosom_features2.pkl")):
         print("Cached Input Features not Found.\nLoad data and save.")
 
         train_data_file = "/opt/ml/input/data/train_dataset/train_dials.json"
-        coco_data_file = "/opt/ml/input/data/train_dataset/new_train.json"
+        coco_data_file = "/opt/ml/input/data/train_dataset/new_train2.json"
 
         train_data, dev_data, dev_labels = load_dataset(train_data_file)
         coco_train_data, coco_dev_data, coco_dev_labels = load_dataset(coco_data_file)
         train_data += coco_train_data
 
-        added_dev_data = dev_data + coco_dev_data
-        added_dev_labels = dev_labels.copy()
-        added_dev_labels.update(coco_dev_labels)
+        # added_dev_data = dev_data + coco_dev_data
+        # added_dev_labels = dev_labels.copy()
+        # added_dev_labels.update(coco_dev_labels)
 
         train_examples = get_examples_from_dialogues(
             train_data, user_first=False, dialogue_level=False
@@ -130,46 +134,46 @@ if __name__ == "__main__":
         coco_dev_examples = get_examples_from_dialogues(
             coco_dev_data, user_first=False, dialogue_level=False
         )
-        added_dev_examples = get_examples_from_dialogues(
-            added_dev_data, user_first=False, dialogue_level=False
-        )
+        # added_dev_examples = get_examples_from_dialogues(
+        #     added_dev_data, user_first=False, dialogue_level=False
+        # )
 
         # Extracting Featrues
         train_features = processor.convert_examples_to_features(train_examples)
 
         print("Save Data")
-        with open(os.path.join(args.data_dir, "train_cosom_features.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "train_cosom_features2.pkl"), "wb") as f:
             pickle.dump(train_features, f)
-        with open(os.path.join(args.data_dir, "dev_cosom_examples.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_cosom_examples2.pkl"), "wb") as f:
             pickle.dump(dev_examples, f)
-        with open(os.path.join(args.data_dir, "dev_cosom_labels.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "dev_cosom_labels2.pkl"), "wb") as f:
             pickle.dump(dev_labels, f)
-        with open(os.path.join(args.data_dir, "coco_dev_cosom_examples.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "coco_dev_cosom_examples2.pkl"), "wb") as f:
             pickle.dump(coco_dev_examples, f)
-        with open(os.path.join(args.data_dir, "coco_dev_cosom_labels.pkl"), "wb") as f:
+        with open(os.path.join(args.data_dir, "coco_dev_cosom_labels2.pkl"), "wb") as f:
             pickle.dump(coco_dev_labels, f)
-        with open(os.path.join(args.data_dir, "added_dev_cosom_examples.pkl"), "wb") as f:
-            pickle.dump(added_dev_examples, f)
-        with open(os.path.join(args.data_dir, "added_dev_cosom_labels.pkl"), "wb") as f:
-            pickle.dump(added_dev_labels, f)
+        # with open(os.path.join(args.data_dir, "added_dev_cosom_examples.pkl"), "wb") as f:
+        #     pickle.dump(added_dev_examples, f)
+        # with open(os.path.join(args.data_dir, "added_dev_cosom_labels.pkl"), "wb") as f:
+        #     pickle.dump(added_dev_labels, f)
 
 
     else:
         print("Cached Input Features Found.\nLoad data from Cached")
-        with open(os.path.join(args.data_dir, "train_cosom_features.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "train_cosom_features2.pkl"), "rb") as f:
             train_features = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_cosom_examples.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_cosom_examples2.pkl"), "rb") as f:
             dev_examples = pickle.load(f)
-        with open(os.path.join(args.data_dir, "dev_cosom_labels.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "dev_cosom_labels2.pkl"), "rb") as f:
             dev_labels = pickle.load(f)
-        with open(os.path.join(args.data_dir, "coco_dev_cosom_examples.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "coco_dev_cosom_examples2.pkl"), "rb") as f:
             coco_dev_examples = pickle.load(f)
-        with open(os.path.join(args.data_dir, "coco_dev_cosom_labels.pkl"), "rb") as f:
+        with open(os.path.join(args.data_dir, "coco_dev_cosom_labels2.pkl"), "rb") as f:
             coco_dev_labels = pickle.load(f)
-        with open(os.path.join(args.data_dir, "added_dev_cosom_examples.pkl"), "rb") as f:
-            added_dev_examples = pickle.load(f)
-        with open(os.path.join(args.data_dir, "added_dev_cosom_labels.pkl"), "rb") as f:
-            added_dev_labels = pickle.load(f)
+        # with open(os.path.join(args.data_dir, "added_dev_cosom_examples.pkl"), "rb") as f:
+        #     added_dev_examples = pickle.load(f)
+        # with open(os.path.join(args.data_dir, "added_dev_cosom_labels.pkl"), "rb") as f:
+        #     added_dev_labels = pickle.load(f)
 
 
     # Model 선언
@@ -334,16 +338,16 @@ if __name__ == "__main__":
                 "coco_turn_slot_f1": coco_eval_result['turn_slot_f1'],
             })
         ############################
-        added_predictions = inference(model, added_dev_examples, processor, device)
-        added_eval_result = _evaluation(added_predictions, added_dev_labels, slot_meta)
-        for k, v in added_eval_result.items():
-            print(f"original + coco data -> {k}: {v}")
-        if save:
-            wandb.log({
-                "added_joint_acc": added_eval_result['joint_goal_accuracy'],
-                "added_turn_slot_acc": added_eval_result['turn_slot_accuracy'],
-                "added_turn_slot_f1": added_eval_result['turn_slot_f1'],
-            })
+        # added_predictions = inference(model, added_dev_examples, processor, device)
+        # added_eval_result = _evaluation(added_predictions, added_dev_labels, slot_meta)
+        # for k, v in added_eval_result.items():
+        #     print(f"original + coco data -> {k}: {v}")
+        # if save:
+        #     wandb.log({
+        #         "added_joint_acc": added_eval_result['joint_goal_accuracy'],
+        #         "added_turn_slot_acc": added_eval_result['turn_slot_accuracy'],
+        #         "added_turn_slot_f1": added_eval_result['turn_slot_f1'],
+        #     })
         if best_score < eval_result["joint_goal_accuracy"]:
             idx = (idx + 1) % 3
             print("Update Best checkpoint!")
@@ -357,5 +361,6 @@ if __name__ == "__main__":
             torch.save(model.state_dict(), f"{save_dir}/best_model{epoch}.bin")
             save_info = {"model_name": f"best_model{epoch}.bin", "epoch": epoch + args.ckpt, "JGA": eval_result["joint_goal_accuracy"]}
             json.dump(save_info, open(f"{save_dir}/best_model{epoch}.json", "w"), indent=2, ensure_ascii=False)
-    torch.save(model.state_dict(), f"{save_dir}/last_model.bin")
+        torch.save(model.state_dict(), f"{save_dir}/last_model.bin")
+
     print(f"Best checkpoint: {save_dir}/model-{best_checkpoint}.bin")

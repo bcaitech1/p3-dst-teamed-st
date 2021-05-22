@@ -1,17 +1,9 @@
-import argparse
-import os
 import json
-
 import torch
 from torch.utils.data import DataLoader, SequentialSampler
 from tqdm import tqdm
-from transformers import BertTokenizer
-
 from data_utils import (WOSDataset, get_examples_from_dialogues, tokenize_ontology, convert_state_dict)
-from model import TRADE, SUMBT
-from preprocessor import TRADEPreprocessor, SUMBTPreprocessor
 from torch.cuda.amp import autocast,  GradScaler
-
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 use_amp = True
@@ -45,6 +37,7 @@ def inference_sumbt(model, eval_loader, processor, device):
                 predictions[f"{guid}-{tid}"] = state
     return predictions
 
+
 def inference_trade(model, eval_loader, processor, device):
     model.eval()
     predictions = {}
@@ -67,6 +60,7 @@ def inference_trade(model, eval_loader, processor, device):
             prediction = postprocess_state(prediction)
             predictions[guid] = prediction
     return predictions
+
 
 def teade_test_inference(model, eval_examples, processor, device):
     model.eval()
@@ -96,6 +90,8 @@ def teade_test_inference(model, eval_examples, processor, device):
         predictions[guids[0]] = prediction
 
     return predictions
+
+
 def save_trade(model, processor, device, save_dir, epoch=-1):
     eval_data = json.load(open(f"/opt/ml/input/data/eval_dataset/eval_dials.json", "r"))
 
@@ -117,90 +113,3 @@ def save_trade(model, processor, device, save_dir, epoch=-1):
     predictions = inference_trade(model, eval_loader, processor, device)
     json.dump(predictions, open(f'{save_dir}/predictions{epoch}.csv', 'w'), indent=2, ensure_ascii=False)
 
-
-
-# if __name__ == "__main__":
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument("--data_dir", type=str, default="/opt/ml/input/data/eval_dataset")
-#     parser.add_argument("--model_dir", type=str, default="/opt/ml/model")
-#     parser.add_argument("--output_dir", type=str, default="/opt/ml/output")
-#     parser.add_argument("--eval_batch_size", type=int, default=8)
-#     parser.add_argument("--model", type=str, default="sumbt", help="select trade or sumbt")
-#     args = parser.parse_args()
-#
-#     print(args)
-#
-#     model_dir_path = os.path.join(args.model_dir, args.model)
-#     eval_data = json.load(open(f"{args.data_dir}/eval_dials.json", "r"))
-#     config = json.load(open(f"{model_dir_path}/exp_config.json", "r"))
-#     config = argparse.Namespace(**config)
-#     slot_meta = json.load(open(f"{model_dir_path}/slot_meta.json", "r"))
-#
-#     config.model = args.model # 나중에 지울 것
-#     tokenizer = BertTokenizer.from_pretrained(config.model_name_or_path)
-#
-#     print(config)
-#     if args.model == "trade":
-#         processor = TRADEPreprocessor(slot_meta, tokenizer)
-#         eval_examples = get_examples_from_dialogues(
-#             eval_data, user_first=False, dialogue_level=False
-#         )
-#     elif args.model == "sumbt":
-#         ontology = json.load(open("/opt/ml/input/data/train_dataset/ontology.json"))
-#         max_turn = max([len(e['dialogue']) for e in eval_data])
-#         processor = SUMBTPreprocessor(slot_meta,
-#                                       tokenizer,
-#                                       ontology=ontology,
-#                                       max_seq_length=64,
-#                                       max_turn_length=max_turn)
-#         eval_examples = get_examples_from_dialogues(
-#             eval_data, user_first=True, dialogue_level=True
-#         )
-#         slot_type_ids, slot_values_ids = tokenize_ontology(ontology, tokenizer, 12)
-#
-#     # Extracting Featrues
-#     eval_features = processor.convert_examples_to_features(eval_examples)
-#     eval_data = WOSDataset(eval_features)
-#     eval_sampler = SequentialSampler(eval_data)
-#     eval_loader = DataLoader(
-#         eval_data,
-#         batch_size=args.eval_batch_size,
-#         sampler=eval_sampler,
-#         collate_fn=processor.collate_fn,
-#     )
-#     print("# eval:", len(eval_data))
-#     # model 선언
-#     model_path = os.path.join(model_dir_path, "best_model.bin")
-#     if args.model == "trade":
-#         tokenized_slot_meta = []
-#         for slot in slot_meta:
-#             tokenized_slot_meta.append(
-#                 tokenizer.encode(slot.replace("-", " "), add_special_tokens=False)
-#             )
-#
-#         model = TRADE(config, tokenized_slot_meta, slot_meta)
-#         ckpt = torch.load(model_path, map_location="cpu")
-#         model.load_state_dict(ckpt)
-#         model.to(device)
-#         print("Model is loaded")
-#         predictions = inference_trade(model, eval_loader, processor, device)
-#
-#     elif args.model == "sumbt":
-#         num_labels = [len(s) for s in slot_type_ids]
-#         model = SUMBT(config, num_labels, device)
-#         model.initialize_slot_value_lookup(slot_values_ids, slot_type_ids)
-#         ckpt = torch.load(model_path, map_location="cpu")
-#         model.load_state_dict(ckpt)
-#         model.to(device)
-#         print("Model is loaded")
-#         predictions = inference_sumbt(model, eval_loader, processor, device)
-#
-#     if not os.path.exists(args.output_dir):
-#         os.mkdir(args.output_dir)
-#
-#     json.dump(
-#         predictions,
-#         open(f"{args.output_dir}/{args.model}_model.csv", "w"),
-#         indent=2,
-#         ensure_ascii=False,
-#     )

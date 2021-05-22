@@ -70,11 +70,6 @@ def inference(model, eval_examples, processor, device):
     return predictions
 
 
-def wrong_output(predictions, labels):
-    pass
-
-
-
 def direct_output(model_path=None, model=None, processor=None):
     """
     model,processor 혹은 model_path 둘중 하나는 정확히 넣어주어야 실행됩니다.
@@ -99,7 +94,7 @@ def direct_output(model_path=None, model=None, processor=None):
 
         slot_meta = json.load(open(f"{model_dir_path}/slot_meta.json", "r"))
         tokenizer = BertTokenizer.from_pretrained(config.model_name_or_path)
-        added_token_num = tokenizer.add_special_tokens(
+        added_token_num = tokenizer.add_special_tokens(     # config 파일에 이미 vocab size가 변경되어 있음
             {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
         )
         # Define Preprocessor
