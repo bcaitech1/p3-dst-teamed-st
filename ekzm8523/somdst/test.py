@@ -1,3 +1,7 @@
+"""
+디버깅 및 테스트용 파일
+"""
+
 from inference_somdst import *
 import pickle
 

@@ -53,6 +53,21 @@ class args:
     n_gate = None
 
 
+@dataclass
+class DSTInputExample:
+    guid: str
+    context_turns: List[str]
+    current_turn: List[str]
+    label: Optional[List[str]] = None
+
+    def to_dict(self):
+        return dataclasses.asdict(self)
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(self.to_dict(), indent=2) + "\n"
+
+
 class WOSDataset(Dataset):
     def __init__(self, features):
         self.features = features
@@ -63,6 +78,49 @@ class WOSDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.features[idx]
+
+
+
+class DSTPreprocessor:
+    def __init__(self, slot_meta, src_tokenizer, trg_tokenizer=None, ontology=None):
+        self.slot_meta = slot_meta
+        self.src_tokenizer = src_tokenizer
+        self.trg_tokenizer = trg_tokenizer if trg_tokenizer else src_tokenizer
+        self.ontology = ontology
+
+    def pad_ids(self, arrays, pad_idx, max_length=-1):
+        if max_length < 0:
+            max_length = max(list(map(len, arrays)))
+
+        arrays = [array + [pad_idx] * (max_length - len(array)) for array in arrays]
+        return arrays
+
+    def pad_id_of_matrix(self, arrays, padding, max_length=-1, left=False):
+        if max_length < 0:
+            max_length = max([array.size(-1) for array in arrays])
+
+        new_arrays = []
+        for i, array in enumerate(arrays):
+            n, l = array.size()
+            pad = torch.zeros(n, (max_length - l))
+            pad[
+                :,
+                :,
+            ] = padding
+            pad = pad.long()
+            m = torch.cat([array, pad], -1)
+            new_arrays.append(m.unsqueeze(0))
+
+        return torch.cat(new_arrays, 0)
+
+    def _convert_example_to_feature(self):
+        raise NotImplementedError
+
+    def convert_examples_to_features(self):
+        raise NotImplementedError
+
+    def recover_state(self):
+        raise NotImplementedError
 
 
 def load_dataset(dataset_path, dev_split=0.1):
@@ -162,21 +220,6 @@ def convert_state_dict(state):
     return dic
 
 
-@dataclass
-class DSTInputExample:
-    guid: str
-    context_turns: List[str]
-    current_turn: List[str]
-    label: Optional[List[str]] = None
-
-    def to_dict(self):
-        return dataclasses.asdict(self)
-
-    def to_json_string(self):
-        """Serializes this instance to a JSON string."""
-        return json.dumps(self.to_dict(), indent=2) + "\n"
-
-
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
     """Truncates a sequence pair in place to the maximum length."""
 
@@ -240,46 +283,6 @@ def get_examples_from_dialogues(data, user_first=False, dialogue_level=False):
     return examples
 
 
-class DSTPreprocessor:
-    def __init__(self, slot_meta, src_tokenizer, trg_tokenizer=None, ontology=None):
-        self.slot_meta = slot_meta
-        self.src_tokenizer = src_tokenizer
-        self.trg_tokenizer = trg_tokenizer if trg_tokenizer else src_tokenizer
-        self.ontology = ontology
-
-    def pad_ids(self, arrays, pad_idx, max_length=-1):
-        if max_length < 0:
-            max_length = max(list(map(len, arrays)))
-
-        arrays = [array + [pad_idx] * (max_length - len(array)) for array in arrays]
-        return arrays
-
-    def pad_id_of_matrix(self, arrays, padding, max_length=-1, left=False):
-        if max_length < 0:
-            max_length = max([array.size(-1) for array in arrays])
-
-        new_arrays = []
-        for i, array in enumerate(arrays):
-            n, l = array.size()
-            pad = torch.zeros(n, (max_length - l))
-            pad[
-                :,
-                :,
-            ] = padding
-            pad = pad.long()
-            m = torch.cat([array, pad], -1)
-            new_arrays.append(m.unsqueeze(0))
-
-        return torch.cat(new_arrays, 0)
-
-    def _convert_example_to_feature(self):
-        raise NotImplementedError
-
-    def convert_examples_to_features(self):
-        raise NotImplementedError
-
-    def recover_state(self):
-        raise NotImplementedError
 def tokenize_ontology(ontology, tokenizer, max_seq_length=12):
     slot_types = []
     slot_values = []

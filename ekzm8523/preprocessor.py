@@ -100,6 +100,7 @@ class TRADEPreprocessor(DSTPreprocessor):
         )
         return input_ids, segment_ids, input_masks, gating_ids, target_ids, guids
 
+
 class TRADEPreprocessorTest(DSTPreprocessor):
     def __init__(
             self,

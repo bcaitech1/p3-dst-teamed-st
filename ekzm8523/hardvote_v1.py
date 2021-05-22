@@ -14,19 +14,19 @@ csv_file1, csv_file2
 
 ############################################## 재료 ########################################################
 
-def sum_predictions(predictions:list, turn:str):
-  states = []
-  for p in predictions:
-    states += p[turn]
-  counts = Counter(states)
+def sum_predictions(predictions: list, turn: str):
+    states = []
+    for p in predictions:
+        states += p[turn]
+    counts = Counter(states)
 
-  return counts
+    return counts
 
 def hardvoting(counts:Counter, n_voter):
     # n_voter 가 2명일 때, 1표 이상 받으면 채택
     # n_voter 가 3명일 때, 1표 이상 받으면 채택
     # n_voter 가 4명일 때, 2표 이상 받으면 채택
-    return {k : v for k, v in counts.items() if v >= n_voter//2}
+    return {k : v for k, v in counts.items() if v > n_voter//2}
 
 def voting2preds(voting_result:dict):
   return {k: list(v.keys()) for k, v in voting_result.items()}
@@ -58,7 +58,7 @@ def voter_meta(predictions, results):
 ######################################## 테스트 ########################################################
 def debug():
 
-    prediction_dir = "./"
+    prediction_dir = "../../../../Downloads/"
     prediction_files = [file for file in os.listdir(prediction_dir) if file.endswith(".csv")]
 
     predictions = [json.load(open(p, "r")) for p in prediction_files]
@@ -89,7 +89,7 @@ def csvs_to_hardvoted_csv(csv_dir, save_dir = "./hardvotin_result"):
     prediction_files = [file for file in os.listdir(csv_dir) if file.endswith(".csv")]
     print(f"{len(prediction_files)} csv files : {prediction_files} are found at {cwd}")
 
-    predictions = [json.load(open(p, "r")) for p in prediction_files]
+    predictions = [json.load(open(os.path.join(csv_dir, p), "r")) for p in prediction_files]
 
     n_voter = len(predictions)
 
@@ -97,17 +97,16 @@ def csvs_to_hardvoted_csv(csv_dir, save_dir = "./hardvotin_result"):
 
     results = defaultdict(dict)
 
-    for t in tqdm.tqdm(turns):
-        sum_preds_at_t = sum_predictions(predictions, turn = t)
-        results[t] = hardvoting(sum_preds_at_t, n_voter)
+    for turn in tqdm.tqdm(turns):
+        turn_pred_count = sum_predictions(predictions, turn = turn)
+        results[turn] = hardvoting(turn_pred_count, n_voter)
 
     voter_statistics = voter_meta(predictions, results)
     voted_predictions = voting2preds(results)
 
     save_csv(voted_predictions, save_dir)
     print(f"voted_predictions are saved at {save_dir}")
-
     print(f"voting result summary : {voter_statistics}")
 
 if __name__ == "__main__":
-  csvs_to_hardvoted_csv(csv_dir = ".", save_dir = "./hardvoting_result")
+  csvs_to_hardvoted_csv(csv_dir ="/opt/ml/hard_voting", save_dir ="./hardvoting_result")
