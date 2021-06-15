@@ -1,4 +1,18 @@
+# 다중 도메인 대화 상태 추적
+미리 정의된 시나리오의 대화에서 (System발화, User발화)를 하나의 턴으로 둘 때, 턴마다 순차적으로 유저 발화의 Dialogue state(대화 상태)를 추적하는 Task
 
+## Dataset
+- `train_dials.json` : 7000개의 대화 (label 포함)
+
+- `public/eval_dials.json` : 1000개의 대화 (label 미포함 / public test set)
+
+- `private/eval_dials.json` : 1000개의 대화 (label 미포함 / private test set)
+
+- `ontology.json` : Ontology-based DST model을 위한 pre-defined ontology입니다.
+
+- `data_utils.py` : 각 대화를 공통적으로 전처리하기 위한 코드입니다.
+
+## File Explorer
 
 ## Team Score
 
