@@ -3,7 +3,7 @@ import argparse
 from eval_utils import DSTEvaluator
 
 
-SLOT_META_PATH = 'data/train_dataset/slot_meta.json'
+SLOT_META_PATH = '/opt/ml/input/data/train_dataset/slot_meta.json'
 
 
 def _evaluation(preds, labels, slot_meta):

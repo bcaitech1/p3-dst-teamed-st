@@ -28,6 +28,24 @@ class OpenVocabDSTFeature:
     segment_id: List[int]
     gating_id: List[int]
     target_ids: Optional[Union[List[int], List[List[int]]]]
+    slot_positions: [List[int]] = None
+    domain_id: int = None
+
+
+@dataclass
+class DSTInputExample:
+    guid: str
+    context_turns: List[str]
+    current_turn: List[str]
+    label: Optional[List[str]] = None
+    domains: List[str] = None
+
+    def to_dict(self):
+        return dataclasses.asdict(self)
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(self.to_dict(), indent=2) + "\n"
 
 
 class WOSDataset(Dataset):
@@ -40,6 +58,50 @@ class WOSDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.features[idx]
+
+
+class DSTPreprocessor:
+    def __init__(self, slot_meta, src_tokenizer, trg_tokenizer=None, ontology=None):
+        self.slot_meta = slot_meta
+        self.src_tokenizer = src_tokenizer
+        self.trg_tokenizer = trg_tokenizer if trg_tokenizer else src_tokenizer
+        self.ontology = ontology
+
+    def pad_ids(self, arrays, pad_idx, max_length=-1):
+        if max_length < 0:
+            max_length = max(list(map(len, arrays)))
+
+        arrays = [
+            array + [pad_idx] * (max_length - min(len(array), 512)) for array in arrays
+        ]
+        return arrays
+
+    def pad_id_of_matrix(self, arrays, padding, max_length=-1, left=False):
+        if max_length < 0:
+            max_length = max([array.size(-1) for array in arrays])
+
+        new_arrays = []
+        for i, array in enumerate(arrays):
+            n, l = array.size()
+            pad = torch.zeros(n, (max_length - l))
+            pad[
+                :,
+                :,
+            ] = padding
+            pad = pad.long()
+            m = torch.cat([array, pad], -1)
+            new_arrays.append(m.unsqueeze(0))
+
+        return torch.cat(new_arrays, 0)
+
+    def _convert_example_to_feature(self):
+        raise NotImplementedError
+
+    def convert_examples_to_features(self):
+        raise NotImplementedError
+
+    def recover_state(self):
+        raise NotImplementedError
 
 
 def load_dataset(dataset_path, dev_split=0.1):
@@ -56,6 +118,8 @@ def load_dataset(dataset_path, dev_split=0.1):
     num_per_domain_trainsition = int(num_dev / 3)
     dev_idx = []
     for v in dom_mapper.values():
+        if len(v) < num_per_domain_trainsition:
+            continue
         idx = random.sample(v, num_per_domain_trainsition)
         dev_idx.extend(idx)
 
@@ -122,26 +186,16 @@ def build_slot_meta(data):
 
 
 def convert_state_dict(state):
+    """
+    :param state: list
+    :return: dict
+    dic[s] = v : s = domain-slot(관광-종류) , v = value(박물관)
+    """
     dic = {}
     for slot in state:
-        s, v = split_slot(slot, get_domain_slot=True)
-        dic[s] = v
+        s, v = split_slot(slot, get_domain_slot=True)   # s = domain-slot(관광-종류) , v = value(박물관)
+        dic[s] = v  # dic[관광-종류] = 박물관
     return dic
-
-
-@dataclass
-class DSTInputExample:
-    guid: str
-    context_turns: List[str]
-    current_turn: List[str]
-    label: Optional[List[str]] = None
-
-    def to_dict(self):
-        return dataclasses.asdict(self)
-
-    def to_json_string(self):
-        """Serializes this instance to a JSON string."""
-        return json.dumps(self.to_dict(), indent=2) + "\n"
 
 
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
@@ -166,6 +220,7 @@ def get_examples_from_dialogue(dialogue, user_first=False):
     examples = []
     history = []
     d_idx = 0
+    domains = dialogue["domains"]
     for idx, turn in enumerate(dialogue["dialogue"]):
         if turn["role"] != "user":
             continue
@@ -188,6 +243,7 @@ def get_examples_from_dialogue(dialogue, user_first=False):
                 context_turns=context,
                 current_turn=current_turn,
                 label=state,
+                domains=domains,
             )
         )
         history.append(sys_utter)
@@ -207,43 +263,22 @@ def get_examples_from_dialogues(data, user_first=False, dialogue_level=False):
     return examples
 
 
-class DSTPreprocessor:
-    def __init__(self, slot_meta, src_tokenizer, trg_tokenizer=None, ontology=None):
-        self.slot_meta = slot_meta
-        self.src_tokenizer = src_tokenizer
-        self.trg_tokenizer = trg_tokenizer if trg_tokenizer else src_tokenizer
-        self.ontology = ontology
+def tokenize_ontology(ontology, tokenizer, max_seq_length=12):
+    slot_types = []
+    slot_values = []
+    for k, v in ontology.items():
+        tokens = tokenizer.encode(k)
+        if len(tokens) < max_seq_length:
+            gap = max_seq_length - len(tokens)
+            tokens.extend([tokenizer.pad_token_id] *  gap)
+        slot_types.append(tokens)
+        slot_value = []
+        for vv in v:
+            tokens = tokenizer.encode(vv)
+            if len(tokens) < max_seq_length:
+                gap = max_seq_length - len(tokens)
+                tokens.extend([tokenizer.pad_token_id] *  gap)
+            slot_value.append(tokens)
+        slot_values.append(torch.LongTensor(slot_value))
+    return torch.LongTensor(slot_types), slot_values
 
-    def pad_ids(self, arrays, pad_idx, max_length=-1):
-        if max_length < 0:
-            max_length = max(list(map(len, arrays)))
-
-        arrays = [array + [pad_idx] * (max_length - len(array)) for array in arrays]
-        return arrays
-
-    def pad_id_of_matrix(self, arrays, padding, max_length=-1, left=False):
-        if max_length < 0:
-            max_length = max([array.size(-1) for array in arrays])
-
-        new_arrays = []
-        for i, array in enumerate(arrays):
-            n, l = array.size()
-            pad = torch.zeros(n, (max_length - l))
-            pad[
-                :,
-                :,
-            ] = padding
-            pad = pad.long()
-            m = torch.cat([array, pad], -1)
-            new_arrays.append(m.unsqueeze(0))
-
-        return torch.cat(new_arrays, 0)
-
-    def _convert_example_to_feature(self):
-        raise NotImplementedError
-
-    def convert_examples_to_features(self):
-        raise NotImplementedError
-
-    def recover_state(self):
-        raise NotImplementedError
