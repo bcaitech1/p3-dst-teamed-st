@@ -59,10 +59,13 @@ pip install -r requirements.txt
 ####  Trade
 
 - Open vocab 기반의 DST model로 Unseen value를 맞출 수 있습니다.
+
 - 모든 Slot을 전부 예측해야 하기 때문에 속도가 느리다는 단점이 있지만 그 단점을 보완하기 위해 Parallel decoding이 사용되었습니다.
+
 - Utterance Encoder의 성능개선을 위해 bidirection RNN Encoder를 BERT로 교체하였습니다.
-<br>
-![](https://i.imgur.com/V0DMhls.png)
+
+![](https://i.imgur.com/d82ZWqz.png)
+
 - 사용법
 ```
 # trade_train.py
@@ -75,7 +78,7 @@ python trade_train.py --save_dir ./output
 
 - Ontology 기반의 DST model로 이름같이 value의 갯수가 많은 slot에 유리합니다.
 - Unseen value를 맞추지 못한다는 단점이 있지만 대회에서 open vocab 기반 모델인 SOM-DST의 output을 새로운 Ontology로 사용하여 개선하였습니다.
-<br>
+
 ![](https://i.imgur.com/kNcXCxB.png)
 
 - 사용법
@@ -91,7 +94,10 @@ python sumbt_train.py --save_dir ./output
 - Open vocab 기반의 DST model 이며 TRADE의 모든 slot을 generation하는건 비효율 적이라는 단점을 보완하기위해 등장한 모델입니다.
 - Utterance를 보고 UPDATE가 필요한 경우에만 generation을 합니다.
 
+
 ![](https://i.imgur.com/d82ZWqz.png)
+
+
 
 - 사용법
 ```
