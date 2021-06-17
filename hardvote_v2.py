@@ -306,10 +306,10 @@ parser.add_argument('encdoing', default = 'utf-8')
 args = parser.parse_args()
 
 if __name__ == "__main__":
-  if args.mode == 'save':
-    csvs_to_hardvoted_csv(csv_dir=args.csv_dir, criterion=args.criterion,save_dir=args.save_dir)
-  elif args.mode == 'test':
-    do_test(csv_dir = args.csv_dir, criterion = args.criterion, verbose = args.vergose, delay = args.delay, encoding = args.encoding)
+    if args.mode == 'save':
+        csvs_to_hardvoted_csv(csv_dir=args.csv_dir, criterion=args.criterion,save_dir=args.save_dir)
+    elif args.mode == 'test':
+        do_test(csv_dir = args.csv_dir, criterion = args.criterion, verbose = args.vergose, delay = args.delay, encoding = args.encoding)
 
   # candids0 : somdst 5개 + sumbt 1개 -> 81.78%
   # candids1 : somdst 5개 -> 81.44%, sumbt가 있는게 낫다.
