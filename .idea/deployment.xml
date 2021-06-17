@@ -1,18 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="root@101.101.210.23:2222 key" remoteFilesAllowedToDisappearOnAutoupload="false" showNewOnSourceInSync="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="root@101.101.217.62:2222">
     <serverData>
-      <paths name="dst">
+      <paths name="root@101.101.217.62:2222">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="root@101.101.210.23:2222 key">
-        <serverdata>
-          <mappings>
-            <mapping deploy="/opt/ml" local="$PROJECT_DIR$" />
+            <mapping deploy="/opt/ml/code" local="$PROJECT_DIR$" web="/" />
+            <mapping local="" />
           </mappings>
         </serverdata>
       </paths>
