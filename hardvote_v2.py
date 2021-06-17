@@ -295,6 +295,26 @@ def csvs_to_hardvoted_csv(csv_dir, criterion=CRITERION.SLOT_FIRST_AND_TOP_VALUE,
 
 # endregion
 
+parser = argparse.ArgumentParser()
+parser.add_argument('mode', default = 'save', help = 'either "save" or "test"')
+parser.add_argument('csv_dir', required = True)
+parser.add_argument('save_dir', default = './hardvoting_result')
+parser.add_argument('criterion', default = CRITERION.default)
+parser.add_argument('verbose', default = VERBOSE.default)
+parser.add_argument('delay', default = 0)
+parser.add_argument('encdoing', default = 'utf-8')
+args = parser.parse_args()
+
 if __name__ == "__main__":
-    # do_test(csv_dir = ".", criterion = CRITERION.SLOT_FIRST_AND_TOP_VALUE, verbose = VERBOSE.FULL, delay = 1)
-    csvs_to_hardvoted_csv(csv_dir=".", criterion=CRITERION.SLOT_FIRST_AND_TOP_VALUE, save_dir="./hardvoting_result")
+  if args.mode == 'save':
+    csvs_to_hardvoted_csv(csv_dir=args.csv_dir, criterion=args.criterion,save_dir=args.save_dir)
+  elif args.mode == 'test':
+    do_test(csv_dir = args.csv_dir, criterion = args.criterion, verbose = args.vergose, delay = args.delay, encoding = args.encoding)
+
+  # candids0 : somdst 5개 + sumbt 1개 -> 81.78%
+  # candids1 : somdst 5개 -> 81.44%, sumbt가 있는게 낫다.
+  # candids2 : somdst 10개 -> 81.38%
+  # candids3 : somdst 5개 + sumbt 3개 -> 81.81%
+  # candids4 : somdst 5개 + sumbt 5배 -> 82.15%
+  # candids5 : somdst 5개 + sumbt 5개 + trade 3개 -> 83.09%
+  # candids6 : somdst 5개 + sumbt 5개 + trade 5개 -> 83.44%
