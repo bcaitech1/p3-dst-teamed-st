@@ -64,7 +64,8 @@ pip install -r requirements.txt
 
 - Utterance Encoder의 성능개선을 위해 bidirection RNN Encoder를 BERT로 교체하였습니다.
 
-![](https://i.imgur.com/d82ZWqz.png)
+![스크린샷 2021-06-18 10 15 51](https://user-images.githubusercontent.com/67869514/122490995-18e21c80-d01e-11eb-93e5-5f44cced27a6.png)
+
 
 - 사용법
 ```
