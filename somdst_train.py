@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default="SOMDST")
-    parser.add_argument("--data_dir", type=str, default="/opt/ml/somdst_data/")
+    parser.add_argument("--data_dir", type=str, default="data")
     parser.add_argument("--save_dir", type=str, default=None)
 
     parser.add_argument("--model_name", type=str, default="")
