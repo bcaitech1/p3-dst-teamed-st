@@ -16,7 +16,7 @@
 
 ![image](https://user-images.githubusercontent.com/38639633/122349426-37490900-cf87-11eb-9573-59351903c8bb.png)
 
-- 데이터는 위와 같은 형식으로 구성되어 있으며, 예측해야하는 State는 **"Domain - Slot - Value"**의 pair로 구성되어 있습니다. 
+- 데이터는 위와 같은 형식으로 구성되어 있으며, 예측해야하는 State는 **"Domain - Slot - Value"** 의 pair로 구성되어 있습니다. 
 
 	- Domain : 5개 Class
 	- Slot : 45개 Class
