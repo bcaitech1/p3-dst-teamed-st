@@ -147,7 +147,7 @@ python hardvot_v2.py mode=save --csv_dir=./output --save_dir=./hardvoting_result
 
 ## Contributors
 
-[윤도연(ydy8989)](https://github.com/ydy8989) | [전재열(Jayten)](https://github.com/Jayten) | [설재환(anawkward)](https://github.com/anawkward) | [민재원(ekzm8523)](https://github.com/ekzm8523) | [김봉진(BongjinKim)](https://github.com/BongjinKim) | [오세민(osmosm7)](https://github.com/osmosm7)
+[윤도연(ydy8989)](https://github.com/ydy8989) | [전재열(Jayten)](https://github.com/jayten-jeon) | [설재환(anawkward)](https://github.com/anawkward) | [민재원(ekzm8523)](https://github.com/ekzm8523) | [김봉진(BongjinKim)](https://github.com/BongjinKim) | [오세민(osmosm7)](https://github.com/osmosm7)
 
 
 
