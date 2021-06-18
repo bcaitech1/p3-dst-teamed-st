@@ -27,7 +27,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default="TRADE")
 
-    parser.add_argument("--data_dir", type=str, default="/opt/ml/input/DST_data/train_dataset")
+    parser.add_argument("--data_dir", type=str, default="data")
     parser.add_argument("--save_dir", type=str, default=None)
     parser.add_argument("--train_batch_size", type=int, default=8)
     parser.add_argument("--eval_batch_size", type=int, default=32)
@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
     # Data Loading
     slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))  # 45개의 slot
-    train_data_file = f"{args.data_dir}/train_dials.json"
+    train_data_file = f"{args.data_dir}/wos-v1_train.json"
     train_data, dev_data, dev_labels = load_dataset(train_data_file)
 
     train_examples = get_examples_from_dialogues(train_data,

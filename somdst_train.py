@@ -55,7 +55,7 @@ if __name__ == "__main__":
     set_seed(args.random_seed)
 
     # Data Loading
-    slot_meta = json.load(open("/opt/ml/input/DST_data/train_dataset/slot_meta.json"))
+    slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))  # 45개의 slot
     tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
     added_token_num = tokenizer.add_special_tokens(
         {"additional_special_tokens": ["[SLOT]", "[NULL]", "[EOS]"]}
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     processor = SOMDSTPreprocessor(slot_meta, tokenizer, max_seq_length=args.max_seq_length)
     args.vocab_size = tokenizer.vocab_size + added_token_num
 
-    train_data_file = "/opt/ml/input/DST_data/train_dataset/train_dials.json"
+    train_data_file = f"{args.data_dir}/wos-v1_train.json"
     train_data, dev_data, dev_labels = load_dataset(train_data_file)
     train_examples = get_examples_from_dialogues(
         train_data, user_first=False, dialogue_level=False

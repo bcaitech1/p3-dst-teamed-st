@@ -113,7 +113,7 @@ def load_dataset(dataset_path, dev_split=0.1):
 
     dom_mapper = defaultdict(list)
     for d in data:
-        dom_mapper[len(d["domains"])].append(d["dialogue_idx"])
+        dom_mapper[len(d["domains"])].append(d["guid"])
 
     num_per_domain_trainsition = int(num_dev / 3)
     dev_idx = []
@@ -125,7 +125,7 @@ def load_dataset(dataset_path, dev_split=0.1):
 
     train_data, dev_data = [], []
     for d in data:
-        if d["dialogue_idx"] in dev_idx:
+        if d["guid"] in dev_idx:
             dev_data.append(d)
         else:
             train_data.append(d)
@@ -133,7 +133,7 @@ def load_dataset(dataset_path, dev_split=0.1):
     dev_labels = {}
     for dialogue in dev_data:
         d_idx = 0
-        guid = dialogue["dialogue_idx"]
+        guid = dialogue["guid"]
         for idx, turn in enumerate(dialogue["dialogue"]):
             if turn["role"] != "user":
                 continue
@@ -216,7 +216,7 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
 
 
 def get_examples_from_dialogue(dialogue, user_first=False):
-    guid = dialogue["dialogue_idx"]
+    guid = dialogue["guid"]
     examples = []
     history = []
     d_idx = 0

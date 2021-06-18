@@ -21,7 +21,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--data_dir", type=str, default="/opt/ml/input/DST_data/train_dataset")
+	parser.add_argument("--data_dir", type=str, default="data")
 	parser.add_argument("--save_dir", type=str, default=None)
 
 	parser.add_argument("--train_batch_size", type=int, default=8)
@@ -61,9 +61,9 @@ if __name__ == "__main__":
 	set_seed(args.random_seed)
 
 	# Data Loading & processor
-	slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))  # 45개의 slot
+    slot_meta = json.load(open(f"{args.data_dir}/slot_meta.json"))  # 45개의 slot
 	ontology = json.load(open(f"{args.data_dir}/ontology.json"))
-	train_data_file = f"{args.data_dir}/train_dials.json"
+    train_data_file = f"{args.data_dir}/wos-v1_train.json"
 	train_data, dev_data, dev_labels = load_dataset(train_data_file)  # item별로 분류 6301개 , 699개
 
 	train_examples = get_examples_from_dialogues(

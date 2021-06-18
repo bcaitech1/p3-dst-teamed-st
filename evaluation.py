@@ -3,7 +3,7 @@ import argparse
 from eval_utils import DSTEvaluator
 
 
-SLOT_META_PATH = '/opt/ml/input/data/train_dataset/slot_meta.json'
+SLOT_META_PATH = './data/slot_meta.json'
 
 
 def _evaluation(preds, labels, slot_meta):
@@ -24,6 +24,7 @@ def _evaluation(preds, labels, slot_meta):
 
 
 def evaluation(gt_path, pred_path):
+    slot_meta = build_slot_meta(json.load(open(f"{args.data_dir}/wos-v1_train.json")))  # 45개의 slot
     slot_meta = json.load(open(SLOT_META_PATH))
     gts = json.load(open(gt_path))
     preds = json.load(open(pred_path))
