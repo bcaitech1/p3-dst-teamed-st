@@ -218,11 +218,11 @@ python hardvot_v2.py mode=save --csv_dir=./output --save_dir=./hardvoting_result
 
 ### paper
 
-- [SUMBT](https://www.aclweb.org/anthology/P19-1546/)
-- [TRADE](https://www.aclweb.org/anthology/P19-1078/)
-- [SOM-DST](https://arxiv.org/abs/1911.03906)
-- [TAPT](https://arxiv.org/abs/2004.10964)
-- [CoCo](https://arxiv.org/abs/2010.12850)
+- [SUMBT: Slot-Utterance Matching for Universal and Scalable Belief Tracking](https://www.aclweb.org/anthology/P19-1546/)
+- [TRADE: Transferable Multi-Domain State Generator for Task-Oriented Dialogue Systems](https://www.aclweb.org/anthology/P19-1078/)
+- [SOM-DST:Efficient Dialogue State Tracking by Selectively Overwriting Memory](https://arxiv.org/abs/1911.03906)
+- [TAPT : Don't Stop Pretraining: Adapt Language Models to Domains and Tasks](https://arxiv.org/abs/2004.10964)
+- [CoCo : Controllable Counterfactuals for Evaluating Dialogue State Trackers](https://arxiv.org/abs/2010.12850)
 
 ### Github
 
